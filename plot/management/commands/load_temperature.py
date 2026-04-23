@@ -11,7 +11,7 @@ class Command(BaseCommand):
     help = 'Load data from temperature file'
 
     def handle(self, *args, **kwargs):
-        datafile = r"C:\Users\Lukas\Desktop\Projektoberflaeche\temperature.csv"
+        datafile = r"temperature_edited.csv"
 
         with open(datafile, newline='') as csvfile:
             reader = csv.DictReader(csvfile)
