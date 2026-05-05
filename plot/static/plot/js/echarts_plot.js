@@ -108,8 +108,8 @@ document.addEventListener('DOMContentLoaded', function () {
 	function updateChart(sensorChart, sensor) {
 		// Full option update is simplest; if performance becomes an issue,
 		// we can switch to incremental updates (append new points only).
-		// Only show the last 8 hours of data (relative to the newest datapoint).
-		var EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
+		// Only show the last 48 hours of data (relative to the newest datapoint).
+		var EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 
 		var rawDates = sensor.dates || [];
 		var rawTemps = sensor.temperatures || [];
