@@ -106,42 +106,43 @@ document.addEventListener('DOMContentLoaded', function () {
 	}
 
 	function updateChart(sensorChart, sensor) {
-		// Full option update is simplest; if performance becomes an issue,
-		// we can switch to incremental updates (append new points only).
-		// Only show the last 48 hours of data (relative to the newest datapoint).
-		var EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+		var HOURS_48_MS = 48 * 60 * 60 * 1000;
 
 		var rawDates = sensor.dates || [];
 		var rawTemps = sensor.temperatures || [];
 		var lastDateMs = rawDates.length ? new Date(rawDates[rawDates.length - 1]).getTime() : NaN;
-		var cutoffMs = isNaN(lastDateMs) ? -Infinity : (lastDateMs - EIGHT_HOURS_MS);
+		var cutoffMs = isNaN(lastDateMs) ? -Infinity : (lastDateMs - HOURS_48_MS);
 
-		var filteredDates = [];
-		var filteredTemps = [];
-		for (var i = 0; i < rawDates.length && i < rawTemps.length; i++) {
-			var t = new Date(rawDates[i]).getTime();
-			if (!isNaN(t) && t >= cutoffMs) {
-				filteredDates.push(rawDates[i]);
-				filteredTemps.push(rawTemps[i]);
+		// Default zoom window: last 48 hours (as a percentage of all data).
+		var startIndex = 0;
+		for (var i = 0; i < rawDates.length; i++) {
+			if (new Date(rawDates[i]).getTime() >= cutoffMs) {
+				startIndex = i;
+				break;
 			}
 		}
+		var startPercent = rawDates.length > 1 ? (startIndex / rawDates.length * 100) : 0;
 
 		var option = {
 			tooltip: { trigger: 'axis' },
 			xAxis: {
 				type: 'category',
-				data: filteredDates,
+				data: rawDates,
 				name: 'Time',
 			},
 			yAxis: {
 				type: 'value',
 				name: 'Temperature in °C'
 			},
+			dataZoom: [
+				{ type: 'slider', start: startPercent, end: 100 },
+				{ type: 'inside' }
+			],
 			series: [
 				{
 					name: 'Temperature',
 					type: 'line',
-					data: filteredTemps,
+					data: rawTemps,
 					smooth: true,
 					showSymbol: false
 				}

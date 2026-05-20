@@ -6,7 +6,7 @@ Django 6 web app that stores temperature measurements from multiple LoRa sensor 
 - Receives temperature readings from remote sensor nodes over LoRa radio via `lora_receiver.py`.
 - Stores readings in `db.sqlite3` as `plot.models.SensorTemperature` (`date`, `temperature`, `node`).
 - Serves a JSON API at `/temperature-data/`.
-- Renders one chart per sensor node on `/` and refreshes automatically every 10 seconds.
+- Renders one chart per sensor node on `/` and refreshes automatically every 10 seconds. All historical data is loaded; the view defaults to the last 48 hours and can be panned or zoomed freely using the slider below each chart or the mouse wheel.
 
 ## How the two processes work together
 
