@@ -5,8 +5,12 @@ Place this file next to manage.py. Run it alongside the Django server:
     python lora_receiver.py
 """
 import sqlite3
+import time
+import re
+import serial
 from datetime import datetime, timezone
 from pathlib import Path
+import random
 
 DB_PATH = Path(__file__).parent / 'db.sqlite3'
 
@@ -39,31 +43,34 @@ def on_packet_received(raw_bytes: bytes) -> None:
     node_str, temp_str = text.split(',')
     save_reading(node=int(node_str), temperature=float(temp_str))
 
-
-def main():
-    print(f"Receiver started. Writing to {DB_PATH}")
-
-    # --- Replace this block with your actual LoRa HAT initialisation ---
-    # Example for Waveshare SX1262 (using their sx126x library):
-    #
-    # import sx126x
-    # lora = sx126x.SX126X()
-    # lora.LoRaConfig(freq=868, sf=7, bw=125, cr=5, preamble=8, CRC=True)
-    # lora.startReceiving()
-    #
-    # while True:
-    #     if lora.rxDone():
-    #         packet = lora.readPacket()
-    #         on_packet_received(bytes(packet))
-    # -------------------------------------------------------------------
-
-    # Placeholder loop for testing without hardware:
-    import time
-    node = 1
+def dummy_receive_loop() -> None:
+    """Dummy loop for testing without LoRa hardware."""
     while True:
-        save_reading(node=node, temperature=20.0 + node)
-        node = (node % 3) + 1   # cycle through nodes 1, 2, 3
-        time.sleep(10)
+        node_id = random.randint(1, 5)
+        temp = round(random.uniform(15.0, 30.0), 2)
+        on_packet_received(f"{node_id},{temp}".encode('utf-8'))
+        time.sleep(5)
+
+def read_serial_port() -> None:
+    ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)  # Adjust port and baud rate as needed
+    #Pattern on serial port: Start Receive: 1,23.9,24.6,-0.6 :End Receive
+    pattern = re.compile(r'Start Receive: (\d+),([\d.-]+),([\d.-]+),([\d.-]+) :End Receive') 
+    while True:
+        line = ser.readline().decode('utf-8').strip()
+        match = pattern.match(line)
+        if match:
+            node_id = int(match.group(1))
+            temp = float(match.group(2))  # Assuming the second value is temperature
+            on_packet_received(f"{node_id},{temp}".encode('utf-8'))
+        else:
+            print(f"Unrecognized line: {line}")
+
+def main(dummy: bool = True) -> None:
+    if dummy: #dummy mode for testing without LoRa hardware
+        dummy_receive_loop()
+    else:
+        read_serial_port()
+    
 
 
 if __name__ == '__main__':
