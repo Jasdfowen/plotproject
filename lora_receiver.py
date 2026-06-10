@@ -17,16 +17,23 @@ DB_PATH = Path(__file__).parent / 'db.sqlite3'
 
 def save_reading(node: int, temperature: float) -> None:
     """Insert one temperature reading into the database."""
-    timestamp = datetime.now(timezone.utc).isoformat()
-    con = sqlite3.connect(DB_PATH)
-    con.execute(
-        'INSERT INTO plot_sensortemperature (date, temperature, node) VALUES (?, ?, ?)',
-        (timestamp, temperature, node)
-    )
-    con.commit()
-    con.close()
-    print(f"Saved: node={node}  temp={temperature}°C  at {timestamp}")
-
+    try:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        con = sqlite3.connect(DB_PATH)
+        con.execute('PRAGMA journal_mode=WAL')
+        con.execute(
+            'INSERT INTO plot_sensortemperature (date, temperature, node) VALUES (?, ?, ?)',
+            (timestamp, temperature, node)
+        )
+        con.commit()
+        print(f"Saved: node={node}  temp={temperature}°C  at {timestamp}")
+    except Exception as e:
+        print(f"Error saving to database: {e}")
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
 
 # ---------------------------------------------------------------------------
 # LoRa receive loop — replace the placeholder below with your HAT's library
@@ -56,15 +63,24 @@ def read_serial_port() -> None:
     #Pattern on serial port: Start Receive: 1,23.9,24.6,-0.6 :End Receive
     pattern = re.compile(r'Start Receive: (\d+),([\d.-]+),([\d.-]+),([\d.-]+) :End Receive') 
     while True:
-        line = ser.readline().decode('utf-8').strip()
-        if line != "":
-            match = pattern.match(line)
-            if match:
-                node_id = int(match.group(1))
-                temp = float(match.group(2))  # Assuming the second value is temperature
-                on_packet_received(f"{node_id},{temp}".encode('utf-8'))
-            else:
-                print(f"Unrecognized line: {line}")
+        try:
+            line = ser.readline().decode('utf-8').strip()
+            if line != "":
+                match = pattern.match(line)
+                if match:
+                    node_id = int(match.group(1))
+                    temp = float(match.group(2))  # Assuming the second value is temperature
+                    on_packet_received(f"{node_id},{temp}".encode('utf-8'))
+                else:
+                    print(f"Unrecognized line: {line}")
+        except Exception as e:
+            print(f"Error reading from serial port: {e}")
+            time.sleep(1)  # Wait before retrying
+            try: 
+                ser.close()
+                ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)  # Attempt to reopen the port
+            except Exception as e:
+                print(f"Critical error with serial port: {e}")
 
 def main(dummy: bool = True) -> None:
     if dummy: #dummy mode for testing without LoRa hardware

@@ -2,13 +2,12 @@ from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.utils import timezone
-
+import csv
+from django.http import HttpResponse
 from datetime import timedelta
 
 from .models import SensorTemperature
-# Create your views here.
-# API endpoint for ECharts data
-@csrf_exempt
+
 def temperature_data(request):
     # Only return the last 30 days of readings, grouped by node.
     cutoff = timezone.now() - timedelta(days=30)
@@ -23,6 +22,17 @@ def temperature_data(request):
     for node, values in data.items():
         sensors.append({'node': node, 'dates': values['dates'], 'temperatures': values['temperatures']})
     return JsonResponse({'sensors': sensors})
+
+def export_csv(request):
+    rows = SensorTemperature.objects.all().order_by('node', 'date')
+    
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="temperature_readings.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['Node', 'Date', 'Temperature'])  # Header
+    for row in rows:
+        writer.writerow([row.node, row.date, row.temperature])
+    return response
 
 def chart(request):
     return render(request, "plot/chart.html")
