@@ -1,4 +1,23 @@
 {% load static %}
-<script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
-<div id="main" style="width: 1800px; height: 400px;"></div>
-<script src="{% static 'plot/js/echarts_plot.js' %}"></script>
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>LoRa Data Plot</title>
+	<script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+	<link rel="stylesheet" href="{% static 'plot/css/chart.css' %}">
+</head>
+<body>
+	<div class="page-shell">
+		<header class="page-header">
+			<h1 class="page-title">LoRa Temperature Monitoring</h1>
+		</header>
+
+		<section class="chart-panel">
+			<div id="main"></div>
+		</section>
+	</div>
+	<script src="{% static 'plot/js/echarts_plot.js' %}"></script>
+</body>
+</html>

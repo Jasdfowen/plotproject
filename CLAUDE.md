@@ -68,4 +68,5 @@ Standalone script (no Django dependency). Key functions:
 - `DEBUG = True` and `SECRET_KEY` is hardcoded in [mysite/settings.py](mysite/settings.py) — development only.
 - No tests are implemented (`plot/tests.py` exists but is empty).
 - The `load_temperature` command reads `temperature_edited.csv` from the current working directory (hardcoded relative path).
-- The chart template ([plot/templates/plot/chart.html](plot/templates/plot/chart.html)) has no `<html>`/`<head>`/`<body>` wrapper — it is a bare fragment.
+- The chart template ([plot/templates/plot/chart.html](plot/templates/plot/chart.html)) is a full HTML document that loads ECharts from CDN and `plot/static/plot/css/chart.css` for page layout.
+- `staticfiles/` is the `collectstatic` output directory; edit CSS/JS only in `plot/static/plot/`, not in `staticfiles/`.

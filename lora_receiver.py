@@ -57,13 +57,14 @@ def read_serial_port() -> None:
     pattern = re.compile(r'Start Receive: (\d+),([\d.-]+),([\d.-]+),([\d.-]+) :End Receive') 
     while True:
         line = ser.readline().decode('utf-8').strip()
-        match = pattern.match(line)
-        if match:
-            node_id = int(match.group(1))
-            temp = float(match.group(2))  # Assuming the second value is temperature
-            on_packet_received(f"{node_id},{temp}".encode('utf-8'))
-        else:
-            print(f"Unrecognized line: {line}")
+        if line != "":
+            match = pattern.match(line)
+            if match:
+                node_id = int(match.group(1))
+                temp = float(match.group(2))  # Assuming the second value is temperature
+                on_packet_received(f"{node_id},{temp}".encode('utf-8'))
+            else:
+                print(f"Unrecognized line: {line}")
 
 def main(dummy: bool = True) -> None:
     if dummy: #dummy mode for testing without LoRa hardware
