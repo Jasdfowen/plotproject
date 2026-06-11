@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 	var POLL_INTERVAL_MS  = 10000;
 	var DEFAULT_WINDOW_MS = 48 * 60 * 60 * 1000;   // initial zoom window width
+	var STALE_AFTER_MS    = 20*60*1000;         // mark a node offline after this reporting gap
 
 	// ── State ────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,15 @@ document.addEventListener('DOMContentLoaded', function () {
 		return dates.length ? new Date(dates[dates.length - 1]).getTime() : NaN;
 	}
 
+	// Human-readable age like "3 min" or "2 h 5 min".
+	function formatAge(ms) {
+		var totalMin = Math.floor(ms / 60000);
+		if (totalMin < 60) { return totalMin + ' min'; }
+		var h = Math.floor(totalMin / 60);
+		var m = totalMin % 60;
+		return m ? (h + ' h ' + m + ' min') : (h + ' h');
+	}
+
 	// ── Chart + sidebar creation ───────────────────────────────────────────────
 
 	// Builds the chart/sidebar row on first sight of a sensor and returns the
@@ -77,6 +87,9 @@ document.addEventListener('DOMContentLoaded', function () {
 		infoPanel.style.flexDirection  = 'column';
 		infoPanel.style.justifyContent = 'center';
 		infoPanel.style.textAlign      = 'left';
+		infoPanel.style.padding        = '10px 12px';
+		infoPanel.style.borderRadius   = '4px';
+		infoPanel.style.borderLeft     = '4px solid transparent';   // turns red when offline
 		row.appendChild(infoPanel);
 
 		var infoSensor = document.createElement('div');
@@ -95,11 +108,19 @@ document.addEventListener('DOMContentLoaded', function () {
 		infoTime.style.whiteSpace = 'pre-line';
 		infoPanel.appendChild(infoTime);
 
+		var infoStatus = document.createElement('div');
+		infoStatus.style.fontSize   = '12px';
+		infoStatus.style.fontWeight = '600';
+		infoStatus.style.color      = '#d32f2f';
+		infoStatus.style.marginTop  = '6px';
+		infoPanel.appendChild(infoStatus);
+
 		infoByNode[nodeKey] = {
 			root:     infoPanel,
 			sensorEl: infoSensor,
 			tempEl:   infoTemp,
-			timeEl:   infoTime
+			timeEl:   infoTime,
+			statusEl: infoStatus
 		};
 
 		mainContainer.appendChild(sensorWrapper);
@@ -128,7 +149,21 @@ document.addEventListener('DOMContentLoaded', function () {
 		chart.setOption({ series: [{ data: toSeriesData(sensor) }] });
 	}
 
-	// Refreshes the sidebar with the latest temperature and timestamp.
+	// Toggles the red "no signal" styling on a sidebar panel.
+	// Pass the reading age in ms to mark it offline, or null to clear.
+	function setOffline(info, ageMs) {
+		if (ageMs == null) {
+			info.root.style.background      = '';
+			info.root.style.borderLeftColor = 'transparent';
+			info.statusEl.textContent       = '';
+		} else {
+			info.root.style.background      = '#fdecea';
+			info.root.style.borderLeftColor = '#d32f2f';
+			info.statusEl.textContent       = 'No signal for ' + formatAge(ageMs);
+		}
+	}
+
+	// Refreshes the sidebar with the latest temperature, timestamp, and online state.
 	function updateInfoPanel(sensor) {
 		var info = infoByNode[String(sensor.node)];
 		if (!info) { return; }
@@ -147,9 +182,13 @@ document.addEventListener('DOMContentLoaded', function () {
 			var timePart = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 			info.timeEl.textContent = datePart + '\n' + timePart;
 			info.root.title = 'Last update: ' + lastDate;   // full ISO on hover
+
+			var ageMs = Date.now() - d.getTime();
+			setOffline(info, ageMs > STALE_AFTER_MS ? ageMs : null);
 		} else {
 			info.timeEl.textContent = '';
 			info.root.title = '';
+			setOffline(info, null);
 		}
 	}
 

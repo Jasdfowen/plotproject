@@ -31,7 +31,7 @@ def export_csv(request):
     writer = csv.writer(response)
     writer.writerow(['Node', 'Date', 'Temperature'])  # Header
     for row in rows:
-        writer.writerow([row.node, row.date, row.temperature])
+        writer.writerow([row.node, row.date.isoformat(), row.temperature])
     return response
 
 def chart(request):
