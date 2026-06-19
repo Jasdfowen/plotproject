@@ -1,0 +1,68 @@
+/* Sensorverwaltung. Nutzt die Farbvariablen aus chart.css (:root) — diese Datei
+   wird zusätzlich zu chart.css geladen, nicht als Ersatz dafür. */
+
+.sensor-form {
+	max-width: 640px;
+}
+
+/* Tabelle aus Zeilen. Der 1px-Abstand + dunkler Hintergrund erzeugt feine Trennlinien. */
+.sensor-table {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	background: var(--border);
+	border: 1px solid var(--border);
+}
+
+/* Eine Zeile = drei Spalten: Sensor-Bezeichnung | Name | Schwellwert. */
+.sensor-row {
+	display: grid;
+	grid-template-columns: 120px 1fr 140px;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 12px;
+	background: var(--panel);
+}
+
+/* Kopfzeile mit den Spaltenüberschriften. */
+.sensor-row--head span {
+	font-size: 10px;
+	letter-spacing: 0.12em;
+	color: var(--muted);
+}
+
+.sensor-label {
+	font-size: 11px;
+	color: var(--muted2);
+	letter-spacing: 0.06em;
+}
+
+.sensor-row input {
+	font-family: inherit;
+	font-size: 13px;
+	padding: 6px 8px;
+	border: 1px solid var(--border);
+	background: var(--bg);
+	color: var(--text);
+}
+
+.sensor-row input:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+
+.sensor-form button {
+	margin-top: 16px;
+	padding: 10px 16px;
+	font-family: inherit;
+	font-size: 12px;
+	letter-spacing: 0.06em;
+	color: #ffffff;
+	background: var(--accent);
+	border: none;
+	cursor: pointer;
+}
+
+.sensor-form button:hover {
+	background: #007a99;
+}

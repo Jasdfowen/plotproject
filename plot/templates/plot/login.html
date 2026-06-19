@@ -1,0 +1,24 @@
+{% load static %}
+<!doctype html>
+<html lang="de">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Login</title>
+	<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="{% static 'plot/css/chart.css' %}">
+	<link rel="stylesheet" href="{% static 'plot/css/login.css' %}">
+</head>
+<body class="login-page">
+	<form method="post" class="login-form">
+		{% csrf_token %}
+		<div class="brand">TEMPERATURÜBERWACHUNG</div>
+		<label for="id_username">Benutzername</label>
+		<input type="text" name="username" id="id_username" autofocus>
+		<label for="id_password">Passwort</label>
+		<input type="password" name="password" id="id_password">
+		<button type="submit">Anmelden</button>
+		{% if form.errors %}<p class="login-error">Benutzername oder Passwort falsch</p>{% endif %}
+	</form>
+</body>
+</html>

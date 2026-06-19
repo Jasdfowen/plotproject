@@ -1,0 +1,51 @@
+/* Login-Seite. Nutzt die Farbvariablen aus chart.css (:root) — diese Datei
+   wird zusätzlich zu chart.css geladen, nicht als Ersatz dafür. */
+
+.login-page {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 100vh;
+}
+
+.login-form {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	width: 340px;
+	padding: 32px;
+	background: var(--panel);
+	border: 1px solid var(--border);
+}
+
+.login-form .brand {
+	font-size: 14px;
+	margin-bottom: 12px;
+}
+
+.login-form label { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; margin-top: 10px; }
+
+.login-form input {
+	font-family: inherit;
+	font-size: 15px;
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	background: var(--bg);
+	color: var(--text);
+}
+
+.login-form button {
+	margin-top: 20px;
+	padding: 12px;
+	font-family: inherit;
+	font-size: 13px;
+	letter-spacing: 0.06em;
+	color: #ffffff;
+	background: var(--accent);
+	border: none;
+	cursor: pointer;
+}
+
+.login-form button:hover { background: #007a99; }
+
+.login-error { color: var(--offline); font-size: 11px; margin-top: 10px; }

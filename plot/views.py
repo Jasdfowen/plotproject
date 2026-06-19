@@ -6,7 +6,8 @@ import csv
 from django.http import HttpResponse
 from datetime import timedelta
 
-from .models import SensorTemperature
+from django.shortcuts import render, redirect
+from .models import SensorTemperature, SensorNodes
 
 def temperature_data(request):
     # Only return the last 30 days of readings, grouped by node.
@@ -16,11 +17,20 @@ def temperature_data(request):
         if entry.node not in data:
             data[entry.node] = {'dates': [], 'temperatures': []}
         data[entry.node]['dates'].append(entry.date.isoformat())
-        data[entry.node]['temperatures'].append(entry.temperature)
+        data[entry.node]['temperatures'].append(round(entry.temperature, 1))
+
+    #Add alias to nodes
+    names = dict(SensorNodes.objects.values_list('node', 'name'))
+
     # Convert to list for easier JS handling
     sensors = []
-    for node, values in data.items():
-        sensors.append({'node': node, 'dates': values['dates'], 'temperatures': values['temperatures']})
+    for node, readings in data.items():
+        sensors.append({
+            'node': node,
+            'name': names.get(node, ''),
+            'dates': readings['dates'],
+            'temperatures': readings['temperatures']
+        })
     return JsonResponse({'sensors': sensors})
 
 def export_csv(request):
@@ -36,3 +46,21 @@ def export_csv(request):
 
 def chart(request):
     return render(request, "plot/chart.html")
+
+def sensor_management(request):
+    if request.method == "POST":
+        for key, value in request.POST.items():
+            if key.startswith("name_"):
+                sensor_id = key.removeprefix("name_")
+                SensorNodes.objects.filter(id=sensor_id).update(name=value)
+            elif key.startswith("threshold_"):
+                sensor_id = key.removeprefix("threshold_")
+                value = value.strip()
+                threshold = float(value) if value else None
+                SensorNodes.objects.filter(id=sensor_id).update(threshold=threshold)
+        return redirect('sensor_management')
+    nodes = SensorTemperature.objects.values_list('node', flat=True).distinct()
+    for node in nodes:
+        SensorNodes.objects.get_or_create(node=node)
+    sensors = SensorNodes.objects.order_by('node')
+    return render(request, "plot/sensor_management.html", {"sensors": sensors})

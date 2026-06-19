@@ -53,8 +53,8 @@ def on_packet_received(raw_bytes: bytes) -> None:
 def dummy_receive_loop() -> None:
     """Dummy loop for testing without LoRa hardware."""
     while True:
-        node_id = random.randint(1, 5)
-        temp = round(random.uniform(15.0, 30.0), 2)
+        node_id = random.randint(1, 3)
+        temp = 20 + 5 * (1 + time.time() % 60 / 60) 
         on_packet_received(f"{node_id},{temp}".encode('utf-8'))
         time.sleep(5)
 

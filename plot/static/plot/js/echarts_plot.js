@@ -1,248 +1,451 @@
+/*
+ * echarts_plot.js — Frontend-Logik der Temperaturüberwachung
+ * ============================================================
+ *
+ * Grobe Funktionsweise:
+ *   1. Beim Laden der Seite werden ein Übersichts-Chart (alle Sensoren als Linien)
+ *      und pro Sensor eine "Karte" mit Einzel-Chart aufgebaut.
+ *   2. Alle 10 Sekunden (POLL_INTERVAL_MS) holt der Browser per fetch() frische
+ *      Messdaten von der Django-API /temperature-data/ und zeichnet alles neu.
+ *   3. Sensoren, die seit > 10 Minuten nichts gesendet haben, gelten als "offline"
+ *      und werden grau bzw. mit OFFLINE-Badge dargestellt.
+ *
+ * Der gesamte Code liegt in einem DOMContentLoaded-Handler. Dadurch laufen die
+ * Funktionen erst, wenn das HTML fertig geladen ist (sonst wären die DOM-Elemente,
+ * die wir per getElementById suchen, noch nicht vorhanden).
+ */
 document.addEventListener('DOMContentLoaded', function () {
 
-	// ── Constants ────────────────────────────────────────────────────────────
+	// ── Konfiguration ────────────────────────────────────────────────────────
+	// Feste Einstellungen. Hier kannst du Verhalten ändern, ohne die Logik anzufassen.
 
-	var POLL_INTERVAL_MS  = 10000;
-	var DEFAULT_WINDOW_MS = 48 * 60 * 60 * 1000;   // initial zoom window width
-	var STALE_AFTER_MS    = 20*60*1000;         // mark a node offline after this reporting gap
+	var POLL_INTERVAL_MS  = 10000;            // Wie oft neue Daten geholt werden (10 s).
+	var OFFLINE_THRESHOLD = 60 * 1000;   // Ab welcher Funkstille ein Sensor als offline gilt (10 min in ms).
 
-	// ── State ────────────────────────────────────────────────────────────────
+	// Auswählbare Zeitfenster für die Buttons oben rechts. "min" = Fensterbreite in Minuten.
+	var TIME_PRESETS = [
+		{ label: '5 min',  min: 5     },
+		{ label: '15 min', min: 15    },
+		{ label: '30 min', min: 30    },
+		{ label: '1 h',    min: 60    },
+		{ label: '2 h',    min: 120   },
+		{ label: '24 h',   min: 60*24 }       // 60*24 = 1440 Minuten = ein Tag.
+	];
+	var DEFAULT_WINDOW_MIN = 15;              // Welches Fenster beim Start aktiv ist (15 min).
 
-	var mainContainer = document.getElementById('main');
-	if (!mainContainer) { return; }
+	// Farbpalette für die Sensorlinien. Wird der Reihe nach an Sensoren vergeben.
+	// Bewusst kräftige Farben, damit sie auf dem hellen Hintergrund gut sichtbar sind.
+	var SENSOR_COLORS = ['#0091b8', '#1a9850', '#d98c00', '#d12f2f', '#7d4fc9',
+	                     '#c43d8e', '#0fa68c', '#b08900', '#3d72d1', '#cc6f1f'];
+	var OFFLINE_LINE = '#c2cad1';             // Graue Linienfarbe für offline-Sensoren.
 
-	var chartsByNode = {};    // nodeKey → ECharts instance
-	var infoByNode   = {};    // nodeKey → sidebar DOM references
-	var inFlight     = false; // guards against overlapping fetches
+	var AXIS_LABEL  = '#7c8a96';              // Farbe der Achsenbeschriftung.
+	var GRID_LINE   = '#e2e7eb';              // Farbe der waagerechten Hilfslinien.
+	var TOOLTIP_BG  = '#ffffff';              // Hintergrund der Tooltip-Box (beim Hovern).
 
-	// ── Helpers ──────────────────────────────────────────────────────────────
+	// ── Zustand (State) ──────────────────────────────────────────────────────
+	// Variablen, die sich zur Laufzeit ändern bzw. Referenzen auf DOM-Elemente halten.
 
-	// x-axis tick label: time only, or "DD.MM\nHH:mm" at midnight to mark a new day.
-	function formatAxisTick(timestampMs) {
-		var d   = new Date(timestampMs);
-		var hh  = String(d.getHours()).padStart(2, '0');
-		var min = String(d.getMinutes()).padStart(2, '0');
-		if (hh === '00' && min === '00') {
-			var dd = String(d.getDate()).padStart(2, '0');
-			var mm = String(d.getMonth() + 1).padStart(2, '0');
-			return dd + '.' + mm + '\n00:00';
+	// Container-Elemente aus dem HTML. Hier hängen wir später Charts/Legende/Buttons ein.
+	var gridContainer   = document.getElementById('main');          // Gitter für die Sensorkarten.
+	var overviewElement = document.getElementById('overviewChart'); // Behälter des Übersichts-Charts.
+	var rangeContainer  = document.getElementById('timeRange');     // Behälter der Zeitfenster-Buttons.
+	var legendContainer = document.getElementById('overviewLegend');// Behälter der Legende.
+
+	// Wenn die wichtigsten Container fehlen, brechen wir ab (z. B. falsches Template).
+	if (!gridContainer || !overviewElement) { return; }
+
+	// Das große Übersichts-Chart wird einmalig erzeugt. echarts.init bindet ECharts an das div.
+	var overviewChart = echarts.init(overviewElement);
+
+	// Nachschlage-Objekte ("Maps"): Schlüssel ist immer die Node-Nummer als Text.
+	var cardsByNode   = {};   // node → { chart, valueEl, statusEl, root, color } – die Sensorkarten.
+	var legendByNode  = {};   // node → { item, swatch }                          – die Legendeneinträge.
+	var colorByNode   = {};   // node → Farbe                                     – einmal vergebene Farbe je Sensor.
+	var assignedColors = 0;   // Zähler, damit jeder neue Sensor die nächste Farbe bekommt.
+
+	var windowMin   = DEFAULT_WINDOW_MIN;  // Aktuell gewählte Zeitfensterbreite in Minuten.
+	var inFlight    = false;               // true, solange ein fetch() läuft (verhindert Überlappung).
+	var lastSensors = [];                  // Zuletzt empfangene Sensordaten (für erneutes Zeichnen ohne neuen fetch).
+	var hiddenNodes = {};                  // node → true, wenn der Sensor per Legenden-Klick ausgeblendet wurde.
+
+	// ── Hilfsfunktionen ────────────────────────────────────────────────────────
+
+	// Kurzbezeichnung des Sensors, z. B. Node 3 → "S03". padStart füllt mit führender Null.
+	function nodeId(node)   { return 'S' + String(node).padStart(2, '0'); }
+	// Längere Bezeichnung, z. B. Node 3 → "Sensor 03".
+	function nodeName(node) { return 'Sensor ' + String(node).padStart(2, '0'); }
+
+	// Anzeigename: der in der Sensorverwaltung vergebene Name (kommt als sensor.name
+	// aus der API), sonst Fallback auf die Kurz-ID "S03".
+	function displayName(sensor) { return sensor.name || nodeId(sensor.node); }
+
+	// Liefert die feste Farbe eines Sensors. Beim ersten Aufruf für eine Node wird
+	// die nächste freie Palettenfarbe vergeben und gemerkt, damit sie konstant bleibt.
+	function colorForNode(nodeKey) {
+		if (!(nodeKey in colorByNode)) {
+			// "% SENSOR_COLORS.length" sorgt dafür, dass die Palette bei > 10 Sensoren von vorn beginnt.
+			colorByNode[nodeKey] = SENSOR_COLORS[assignedColors % SENSOR_COLORS.length];
+			assignedColors++;
 		}
-		return hh + ':' + min;
+		return colorByNode[nodeKey];
 	}
 
-	// [timestamp, value] pairs for the time-axis line series.
+	// Wandelt die API-Daten eines Sensors in das von ECharts erwartete Format um:
+	// ein Array aus [zeitstempel_in_ms, temperatur]-Paaren.
 	function toSeriesData(sensor) {
-		var dates = sensor.dates        || [];
-		var temps = sensor.temperatures || [];
-		return dates.map(function (d, i) { return [d, temps[i]]; });
+		var dates = sensor.dates || [], temps = sensor.temperatures || [];
+		// map() läuft über alle Datumswerte; "i" ist der Index, um die passende Temperatur zu greifen.
+		return dates.map(function (d, i) { return [new Date(d).getTime(), temps[i]]; });
 	}
 
-	// Last timestamp of a sensor as ms, or NaN when there is no data.
+	// Zeitstempel der letzten Messung eines Sensors in Millisekunden. NaN, falls keine Daten.
 	function lastTimestampMs(sensor) {
 		var dates = sensor.dates || [];
 		return dates.length ? new Date(dates[dates.length - 1]).getTime() : NaN;
 	}
 
-	// Human-readable age like "3 min" or "2 h 5 min".
-	function formatAge(ms) {
-		var totalMin = Math.floor(ms / 60000);
-		if (totalMin < 60) { return totalMin + ' min'; }
-		var h = Math.floor(totalMin / 60);
-		var m = totalMin % 60;
-		return m ? (h + ' h ' + m + ' min') : (h + ' h');
+	// true, wenn der Sensor als offline gilt: keine Daten ODER letzte Messung älter als der Schwellwert.
+	function isOffline(sensor) {
+		var t = lastTimestampMs(sensor);
+		return isNaN(t) ? true : (Date.now() - t > OFFLINE_THRESHOLD);
 	}
 
-	// ── Chart + sidebar creation ───────────────────────────────────────────────
+	// Zentrale Regel für die Linienfarbe eines Sensors: grau wenn offline, sonst seine feste Farbe.
+	// Steht nur hier, damit eine Farbänderung an einer einzigen Stelle wirkt.
+	function lineColor(sensor) {
+		return isOffline(sensor) ? OFFLINE_LINE : colorForNode(String(sensor.node));
+	}
 
-	// Builds the chart/sidebar row on first sight of a sensor and returns the
-	// chart; reuses the existing instance afterwards. The static option (axes,
-	// tooltip, initial 48h zoom) is set here just once — later polls only feed
-	// in new data, so the zoom window is never disturbed.
-	function ensureChartForSensor(sensor) {
-		var nodeKey = String(sensor.node);
-		if (chartsByNode[nodeKey]) {
-			return chartsByNode[nodeKey];
-		}
-
-		// Wrapper + row: chart (flexible width) beside sidebar (fixed width).
-		var sensorWrapper = document.createElement('div');
-		sensorWrapper.style.marginBottom = '24px';
-
-		var row = document.createElement('div');
-		row.style.display    = 'flex';
-		row.style.alignItems = 'stretch';
-		row.style.gap        = '16px';
-		sensorWrapper.appendChild(row);
-
-		var chartElement = document.createElement('div');
-		chartElement.style.flex     = '1';
-		chartElement.style.minWidth = '0';
-		chartElement.style.height   = '500px';
-		row.appendChild(chartElement);
-
-		// Sidebar: latest reading for this sensor.
-		var infoPanel = document.createElement('div');
-		infoPanel.style.width          = '160px';
-		infoPanel.style.display        = 'flex';
-		infoPanel.style.flexDirection  = 'column';
-		infoPanel.style.justifyContent = 'center';
-		infoPanel.style.textAlign      = 'left';
-		infoPanel.style.padding        = '10px 12px';
-		infoPanel.style.borderRadius   = '4px';
-		infoPanel.style.borderLeft     = '4px solid transparent';   // turns red when offline
-		row.appendChild(infoPanel);
-
-		var infoSensor = document.createElement('div');
-		infoSensor.style.fontWeight = '600';
-		infoSensor.textContent = 'Sensor ' + sensor.node;
-		infoPanel.appendChild(infoSensor);
-
-		var infoTemp = document.createElement('div');
-		infoTemp.style.fontSize = '20px';
-		infoTemp.textContent = '-- °C';
-		infoPanel.appendChild(infoTemp);
-
-		var infoTime = document.createElement('div');
-		infoTime.style.fontSize   = '12px';
-		infoTime.style.opacity    = '0.8';
-		infoTime.style.whiteSpace = 'pre-line';
-		infoPanel.appendChild(infoTime);
-
-		var infoStatus = document.createElement('div');
-		infoStatus.style.fontSize   = '12px';
-		infoStatus.style.fontWeight = '600';
-		infoStatus.style.color      = '#d32f2f';
-		infoStatus.style.marginTop  = '6px';
-		infoPanel.appendChild(infoStatus);
-
-		infoByNode[nodeKey] = {
-			root:     infoPanel,
-			sensorEl: infoSensor,
-			tempEl:   infoTemp,
-			timeEl:   infoTime,
-			statusEl: infoStatus
+	// Baut das ECharts-Linienobjekt für einen Sensor. Wird von Übersichts-Chart und
+	// Sensorkarten gemeinsam genutzt; "width" steuert die Linienstärke.
+	function lineSeries(sensor, width) {
+		var color = lineColor(sensor);
+		return {
+			// smooth:false – Bezier-Glättung würde zwischen weit auseinanderliegenden
+			// Messpunkten künstlich über- und unterschwingen und die Linien unruhiger
+			// wirken lassen, als die Messwerte es eigentlich sind.
+			name: displayName(sensor), type: 'line', smooth: false, showSymbol: false,
+			lineStyle: { width: width, color: color },
+			itemStyle: { color: color },
+			data: toSeriesData(sensor)
 		};
+	}
 
-		mainContainer.appendChild(sensorWrapper);
+	// Formatiert einen Zeitstempel (ms) als deutsche Uhrzeit "HH:MM:SS".
+	function formatClock(ms) {
+		return new Date(ms).toLocaleTimeString('de-DE',
+			{ hour: '2-digit', minute: '2-digit', second: '2-digit' });
+	}
 
-		var chart  = echarts.init(chartElement);
-		var lastMs = lastTimestampMs(sensor);
+	// Gemeinsame Definition der X-Achse (Zeitachse). showLabels steuert, ob Beschriftung
+	// sichtbar ist: im Übersichts-Chart ja, in den kleinen Karten nein (Platzersparnis).
+	function timeAxis(showLabels) {
+		return {
+			type: 'time',                     // ECharts behandelt die Werte als echte Zeit.
+			axisLabel: showLabels
+				? { color: AXIS_LABEL, fontSize: 10, fontFamily: 'JetBrains Mono', formatter: '{HH}:{mm}' }
+				: { show: false },            // Keine Beschriftung in den Mini-Charts.
+			axisLine: { show: showLabels, lineStyle: { color: '#d3dae0' } },
+			axisTick: { show: false },        // Keine kleinen Teilstriche.
+			splitLine: { show: false }        // Keine senkrechten Gitterlinien.
+		};
+	}
+
+	// Gemeinsame Definition der Y-Achse (Temperaturachse). fontSize variiert nach Chartgröße.
+	function valueAxis(fontSize) {
+		return {
+			type: 'value',
+			axisLabel: { color: AXIS_LABEL, fontSize: fontSize, fontFamily: 'JetBrains Mono',
+			             formatter: function (v) { return v + '°'; } },  // Zahl + Gradzeichen, z. B. "23°".
+			axisLine: { show: false },
+			axisTick: { show: false },
+			splitLine: { lineStyle: { color: GRID_LINE, type: 'dashed' } }  // Gestrichelte waagerechte Hilfslinien.
+		};
+	}
+
+	// Gemeinsame Tooltip-Definition (erscheint beim Hovern über das Chart).
+	// trigger:'axis' = es werden alle Linien an der Mauszeit-Position gezeigt.
+	function chartTooltip() {
+		return {
+			trigger: 'axis',
+			backgroundColor: TOOLTIP_BG,
+			borderColor: '#d3dae0',
+			textStyle: { color: '#1e2630', fontFamily: 'JetBrains Mono', fontSize: 11 }
+		};
+	}
+
+	// Berechnet das aktuell anzuzeigende Zeitfenster, immer am "Jetzt" ausgerichtet:
+	// Start = jetzt minus Fensterbreite, Ende = jetzt. Dadurch wandert die Ansicht mit
+	// der Uhr nach rechts (Schreiber-/Strip-Chart-Effekt). 60000 = Millisekunden pro Minute.
+	function windowBounds() {
+		var now = Date.now();
+		return { start: now - windowMin * 60000, end: now };
+	}
+
+	// ── Zeitfenster-Steuerung ────────────────────────────────────────────────
+
+	// Baut für jedes Preset einen Button und hängt ihn in die Topbar ein.
+	function buildRangeControls() {
+		TIME_PRESETS.forEach(function (preset) {
+			var btn = document.createElement('button');
+			btn.className   = 'range-btn';
+			btn.textContent = preset.label;
+			btn.dataset.min = String(preset.min);   // Merkt sich die Minuten am Element (data-min-Attribut).
+			btn.addEventListener('click', function () {
+				windowMin = preset.min;              // Neues Fenster übernehmen ...
+				markActiveRange();                   // ... aktiven Button hervorheben ...
+				render(lastSensors);                 // ... und sofort mit vorhandenen Daten neu zeichnen.
+			});
+			rangeContainer.appendChild(btn);
+		});
+		markActiveRange();   // Beim Start den Default-Button markieren.
+	}
+
+	// Markiert den Button, dessen Minutenwert dem aktuellen Fenster entspricht (CSS-Klasse).
+	function markActiveRange() {
+		rangeContainer.querySelectorAll('.range-btn').forEach(function (b) {
+			b.classList.toggle('range-btn--active', Number(b.dataset.min) === windowMin);
+		});
+	}
+
+	// ── Übersichts-Chart ───────────────────────────────────────────────────────
+
+	// Einmalige Grundkonfiguration des großen Charts (Layout, Achsen, leere Serien).
+	function initOverviewChart() {
+		overviewChart.setOption({
+			animation: false,   // Keine Übergangsanimation → Updates erscheinen sofort, kein "Nachziehen".
+			grid:    { left: 40, right: 16, top: 8, bottom: 24 },  // Innenabstände der Zeichenfläche.
+			tooltip: chartTooltip(),
+			xAxis:   timeAxis(true),   // Mit Achsenbeschriftung.
+			yAxis:   valueAxis(10),
+			series:  []                // Linien kommen erst beim ersten Update dazu.
+		});
+	}
+
+	// Aktualisiert die Linien des Übersichts-Charts anhand der aktuellen Sensordaten.
+	function updateOverviewChart(sensors, bounds) {
+		var series = sensors
+			// Per Legende ausgeblendete Sensoren werden hier herausgefiltert (nicht gezeichnet).
+			.filter(function (s) { return !hiddenNodes[String(s.node)]; })
+			// Jeder verbleibende Sensor wird in eine Linienserie übersetzt (offline dünner gezeichnet).
+			// Im Übersichts-Chart etwas dickere Linien als in den Karten, damit sich
+			// mehrere überlagernde Sensoren besser unterscheiden lassen.
+			.map(function (s) { return lineSeries(s, isOffline(s) ? 1.2 : 2); });
+		overviewChart.setOption({
+			xAxis:  { min: bounds.start, max: bounds.end },  // Sichtbares Zeitfenster setzen.
+			series: series
+		}, {
+			// replaceMerge sorgt dafür, dass weggefallene Serien (ausgeblendete Sensoren)
+			// auch wirklich entfernt werden, statt als Rest stehenzubleiben.
+			replaceMerge: ['series']
+		});
+	}
+
+	// ── Legende ─────────────────────────────────────────────────────────────
+
+	// Legt für einen Sensor genau einmal einen Legendeneintrag an (oder gibt den vorhandenen zurück).
+	function ensureLegendItem(sensor) {
+		var key = String(sensor.node);
+		if (legendByNode[key]) { return legendByNode[key]; }  // Schon vorhanden → fertig.
+
+		var item = document.createElement('div');
+		item.className = 'legend-item';
+		// Klick auf den Eintrag schaltet den Sensor im Übersichts-Chart ein/aus.
+		item.addEventListener('click', function () {
+			hiddenNodes[key] = !hiddenNodes[key];                       // Sichtbarkeit umschalten.
+			item.classList.toggle('legend-item--hidden', hiddenNodes[key]); // Optische Markierung (durchgestrichen).
+			updateOverviewChart(lastSensors, windowBounds());          // Chart sofort neu zeichnen.
+		});
+
+		// Kleiner Farbbalken vor dem Namen.
+		var swatch = document.createElement('span');
+		swatch.className = 'legend-swatch';
+		item.appendChild(swatch);
+
+		// Beschriftung, z. B. "S03".
+		var label = document.createElement('span');
+		label.className   = 'legend-label';
+		label.textContent = displayName(sensor);
+		item.appendChild(label);
+
+		legendContainer.appendChild(item);
+		legendByNode[key] = { item: item, swatch: swatch, label: label };  // Referenzen merken.
+		return legendByNode[key];
+	}
+
+	// Aktualisiert Aussehen eines Legendeneintrags (Offline-Zustand + Farbe des Balkens).
+	function updateLegendItem(sensor) {
+		var ref = ensureLegendItem(sensor);
+		var offline = isOffline(sensor);
+		ref.item.classList.toggle('legend-item--offline', offline);
+		ref.swatch.style.background = lineColor(sensor);
+		ref.label.textContent = displayName(sensor);   // Name bei jedem Poll neu setzen (folgt Umbenennungen ohne Reload).
+	}
+
+	// ── Sensorkarten ─────────────────────────────────────────────────────────────
+
+	// Legt für einen Sensor genau einmal eine Karte an (Infospalte + kleines Chart).
+	function ensureCard(sensor) {
+		var key = String(sensor.node);
+		if (cardsByNode[key]) { return cardsByNode[key]; }  // Schon vorhanden → fertig.
+
+		var color = colorForNode(key);
+
+		// Äußere Karte.
+		var card = document.createElement('div');
+		card.className = 'sensor-card';
+
+		// Linke Infospalte.
+		var info = document.createElement('div');
+		info.className = 'sensor-info';
+		card.appendChild(info);
+
+		// Kopf: ID + Name. innerHTML ist hier unkritisch, da der Inhalt aus festen Zahlen besteht.
+		var head = document.createElement('div');
+		head.innerHTML = '<div class="sensor-id">' + nodeId(sensor.node) + '</div>' +
+		                 '<div class="sensor-name">' + (sensor.name || nodeName(sensor.node)) + '</div>';
+		info.appendChild(head);
+		var nameEl = head.querySelector('.sensor-name');   // Namens-Zeile merken, wird bei jedem Poll aktualisiert.
+
+		// Großer aktueller Messwert + Einheit "°C".
+		var valueWrap = document.createElement('div');
+		var valueEl = document.createElement('div');
+		valueEl.className   = 'sensor-value';
+		valueEl.style.color = color;
+		valueEl.textContent = '—';                 // Platzhalter, bis echte Daten da sind.
+		valueWrap.appendChild(valueEl);
+		valueWrap.insertAdjacentHTML('beforeend', '<div class="sensor-unit">°C</div>');
+		info.appendChild(valueWrap);
+
+		// Zeile für Uhrzeit der letzten Messung bzw. OFFLINE-Badge.
+		var statusEl = document.createElement('div');
+		statusEl.className = 'sensor-time';
+		info.appendChild(statusEl);
+
+		// Rechts das kleine Verlaufs-Chart.
+		var chartEl = document.createElement('div');
+		chartEl.className = 'sensor-chart';
+		card.appendChild(chartEl);
+
+		gridContainer.appendChild(card);   // Karte ins Gitter hängen.
+
+		// Eigenes ECharts-Mini-Chart für diesen Sensor.
+		var chart = echarts.init(chartEl);
 		chart.setOption({
-			tooltip: { trigger: 'axis' },
-			xAxis: { type: 'time', name: 'Time', axisLabel: { formatter: formatAxisTick } },
-			yAxis: { type: 'value', name: 'Temperature in °C' },
-			dataZoom: [
-				{ type: 'slider', startValue: isNaN(lastMs) ? undefined : lastMs - DEFAULT_WINDOW_MS, endValue: lastMs },
-				{ type: 'inside' }
-			],
-			series: [{ name: 'Temperature', type: 'line', smooth: true, showSymbol: false, data: [] }]
+			animation: false,
+			grid:    { left: 34, right: 8, top: 6, bottom: 4 },
+			tooltip: chartTooltip(),
+			xAxis:   timeAxis(false),   // Ohne Achsenbeschriftung (kleine Fläche).
+			yAxis:   valueAxis(9),
+			series:  [{ type: 'line', smooth: true, showSymbol: false,
+			            lineStyle: { width: 1.5, color: color }, itemStyle: { color: color }, data: [] }]
 		});
 
-		chartsByNode[nodeKey] = chart;
-		return chart;
+		// Alle Bestandteile der Karte merken, damit updateCard() sie schnell findet.
+		cardsByNode[key] = { chart: chart, root: card, valueEl: valueEl, statusEl: statusEl, nameEl: nameEl, color: color };
+		return cardsByNode[key];
 	}
 
-	// ── Updates ──────────────────────────────────────────────────────────────
+	// Aktualisiert eine Sensorkarte mit den neuesten Daten.
+	function updateCard(sensor, bounds) {
+		var ref = ensureCard(sensor);          // Karte holen (oder beim ersten Mal anlegen).
+		var offline = isOffline(sensor);
 
-	// Merges the latest readings into the chart; the zoom window is left as-is.
-	function updateChart(chart, sensor) {
-		chart.setOption({ series: [{ data: toSeriesData(sensor) }] });
-	}
+		// Name bei jedem Poll neu setzen, damit Umbenennungen ohne Reload erscheinen.
+		ref.nameEl.textContent = sensor.name || nodeName(sensor.node);
 
-	// Toggles the red "no signal" styling on a sidebar panel.
-	// Pass the reading age in ms to mark it offline, or null to clear.
-	function setOffline(info, ageMs) {
-		if (ageMs == null) {
-			info.root.style.background      = '';
-			info.root.style.borderLeftColor = 'transparent';
-			info.statusEl.textContent       = '';
-		} else {
-			info.root.style.background      = '#fdecea';
-			info.root.style.borderLeftColor = '#d32f2f';
-			info.statusEl.textContent       = 'No signal for ' + formatAge(ageMs);
-		}
-	}
-
-	// Refreshes the sidebar with the latest temperature, timestamp, and online state.
-	function updateInfoPanel(sensor) {
-		var info = infoByNode[String(sensor.node)];
-		if (!info) { return; }
-
-		var temps    = sensor.temperatures || [];
-		var dates    = sensor.dates        || [];
+		// Letzten Messwert und dessen Zeitpunkt bestimmen.
+		var temps    = sensor.temperatures || [], dates = sensor.dates || [];
 		var lastTemp = temps.length ? temps[temps.length - 1] : null;
-		var lastDate = dates.length ? dates[dates.length - 1] : '';
+		var lastMs   = lastTimestampMs(sensor);
 
-		info.sensorEl.textContent = 'Sensor ' + sensor.node;
-		info.tempEl.textContent   = (lastTemp == null) ? '-- °C' : lastTemp + ' °C';
+		// Offline-Optik der Karte umschalten.
+		ref.root.classList.toggle('sensor-card--offline', offline);
+		ref.valueEl.style.color   = offline ? '#3a4a58' : ref.color;   // Wert gedimmt, wenn offline.
+		ref.valueEl.textContent   = (lastTemp == null) ? '—' : Number(lastTemp).toFixed(1);  // 1 Nachkommastelle.
 
-		if (lastDate) {
-			var d        = new Date(lastDate);
-			var datePart = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
-			var timePart = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-			info.timeEl.textContent = datePart + '\n' + timePart;
-			info.root.title = 'Last update: ' + lastDate;   // full ISO on hover
-
-			var ageMs = Date.now() - d.getTime();
-			setOffline(info, ageMs > STALE_AFTER_MS ? ageMs : null);
+		if (offline) {
+			ref.statusEl.innerHTML = '<span class="sensor-badge">OFFLINE</span>';
 		} else {
-			info.timeEl.textContent = '';
-			info.root.title = '';
-			setOffline(info, null);
+			ref.statusEl.className   = 'sensor-time';
+			ref.statusEl.textContent = isNaN(lastMs) ? '—' : formatClock(lastMs);  // Uhrzeit der letzten Messung.
 		}
-	}
 
-	// ── Data loading ───────────────────────────────────────────────────────────
-
-	// Status message shown only while no charts exist yet.
-	function showPlaceholder(message) {
-		if (Object.keys(chartsByNode).length === 0) {
-			mainContainer.textContent = message;
-		}
-	}
-
-	// Fetches fresh data and updates every sensor; skips if a fetch is in flight.
-	function loadAndRender() {
-		if (inFlight) { return; }
-		inFlight = true;
-
-		fetch('/temperature-data/')
-			.then(function (response) { return response.json(); })
-			.then(function (json) {
-				var sensors = json.sensors || [];
-
-				if (sensors.length === 0) {
-					showPlaceholder('No sensor data available.');
-					return;
-				}
-
-				// Drop the placeholder text before inserting the first chart.
-				if (Object.keys(chartsByNode).length === 0) {
-					mainContainer.innerHTML = '';
-				}
-
-				sensors.forEach(function (sensor) {
-					var chart = ensureChartForSensor(sensor);
-					updateChart(chart, sensor);
-					updateInfoPanel(sensor);
-				});
-			})
-			.catch(function () {
-				showPlaceholder('Failed to load sensor data.');
-			})
-			.finally(function () { inFlight = false; });
-	}
-
-	// ── Init ─────────────────────────────────────────────────────────────────
-
-	loadAndRender();
-	setInterval(loadAndRender, POLL_INTERVAL_MS);
-
-	// Resize all charts when the browser window changes size.
-	window.addEventListener('resize', function () {
-		Object.keys(chartsByNode).forEach(function (nodeKey) {
-			chartsByNode[nodeKey].resize();
+		// Linie und Zeitfenster des Mini-Charts aktualisieren (gleicher Serien-Helfer wie oben).
+		ref.chart.setOption({
+			xAxis:  { min: bounds.start, max: bounds.end },
+			series: [ lineSeries(sensor, 1.5) ]
 		});
+	}
+
+	// ── Kopfzeile: Online-/Offline-Zähler ──────────────────────────────────────
+
+	// Aktualisiert die Anzeige "x ONLINE | y OFFLINE" in der Topbar.
+	function updateCounts(sensors) {
+		var online  = sensors.filter(function (s) { return !isOffline(s); }).length;
+		var offline = sensors.length - online;
+
+		document.getElementById('countOnline').textContent = online + ' ONLINE';
+
+		// Trennzeichen und Offline-Anzeige nur einblenden, wenn es offline-Sensoren gibt.
+		var sep = document.getElementById('countSep');
+		var off = document.getElementById('countOffline');
+		if (offline > 0) {
+			off.textContent = offline + ' OFFLINE';
+			off.hidden = false; sep.hidden = false;
+		} else {
+			off.hidden = true;  sep.hidden = true;
+		}
+	}
+
+	// ── Zeichnen + Datenabruf ─────────────────────────────────────────────────
+
+	// Zeichnet die gesamte Oberfläche aus einem Satz Sensordaten neu.
+	function render(sensors) {
+		if (!sensors.length) { return; }   // Ohne Daten nichts tun.
+		var bounds = windowBounds();       // Einmal das Zeitfenster berechnen und überall verwenden.
+		updateCounts(sensors);
+		updateOverviewChart(sensors, bounds);
+		sensors.forEach(function (s) {
+			updateCard(s, bounds);
+			updateLegendItem(s);
+		});
+	}
+
+	// Holt frische Daten von der API und zeichnet danach neu.
+	function loadAndRender() {
+		if (inFlight) { return; }          // Läuft schon ein Abruf? Dann diesen überspringen.
+		inFlight = true;
+		fetch('/temperature-data/')
+			.then(function (r) { return r.json(); })          // Antwort als JSON parsen.
+			.then(function (json) {
+				lastSensors = json.sensors || [];             // Daten merken (für Toggle/Range ohne neuen Abruf).
+				render(lastSensors);
+			})
+			.catch(function () { /* Bei Fehler letzte Ansicht stehen lassen, statt zu leeren. */ })
+			.finally(function () { inFlight = false; });      // Egal ob Erfolg/Fehler: Sperre lösen.
+	}
+
+	// ── Initialisierung ────────────────────────────────────────────────────────
+	// Wird einmal beim Laden ausgeführt und startet die laufenden Timer.
+
+	initOverviewChart();                              // Übersichts-Chart aufsetzen.
+	buildRangeControls();                             // Zeitfenster-Buttons erzeugen.
+	loadAndRender();                                  // Sofort einmal Daten holen + zeichnen.
+	setInterval(loadAndRender, POLL_INTERVAL_MS);     // Danach alle 10 s wiederholen.
+
+	// Live-Uhr in der Statusleiste, die jede Sekunde tickt.
+	var clockEl = document.getElementById('clock');
+	function tick() { if (clockEl) { clockEl.textContent = formatClock(Date.now()); } }
+	tick();
+	setInterval(tick, 1000);
+
+	// Bei Größenänderung des Fensters müssen alle Charts neu vermessen werden,
+	// sonst behalten sie ihre alte Pixelgröße.
+	window.addEventListener('resize', function () {
+		overviewChart.resize();
+		Object.keys(cardsByNode).forEach(function (k) { cardsByNode[k].chart.resize(); });
 	});
 
 });

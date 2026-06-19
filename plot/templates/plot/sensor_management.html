@@ -1,0 +1,50 @@
+{% load static %}
+<!doctype html>
+<html lang="de">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Sensorverwaltung</title>
+	<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="{% static 'plot/css/chart.css' %}">
+	<link rel="stylesheet" href="{% static 'plot/css/sensor_management.css' %}">
+</head>
+<body>
+	<header class="topbar">
+		<div class="topbar-left">
+			<span class="brand">SENSORVERWALTUNG</span>
+		</div>
+		<div class="topbar-right">
+			<a href="{% url 'chart' %}" class="csv-btn">ZURÜCK</a>
+		</div>
+	</header>
+
+	<main class="content">
+		<section>
+			<div class="section-label">SENSOREN BEARBEITEN</div>
+			<form method="post" class="sensor-form">
+				{% csrf_token %}
+				<div class="sensor-table">
+					<div class="sensor-row sensor-row--head">
+						<span>SENSOR</span>
+						<span>NAME</span>
+						<span>SCHWELLWERT (°C)</span>
+					</div>
+					{% for sensor in sensors %}
+						<div class="sensor-row">
+							<label class="sensor-label" for="name_{{ sensor.id }}">Sensor {{ sensor.node }}</label>
+							<input type="text"
+								name="name_{{ sensor.id }}" id="name_{{ sensor.id }}"
+								value="{{ sensor.name }}" placeholder="">
+							<input type="number" step="0.1" inputmode="decimal"
+								name="threshold_{{ sensor.id }}" id="threshold_{{ sensor.id }}"
+								value="{{ sensor.threshold|default_if_none:'' }}" placeholder="—">
+						</div>
+					{% endfor %}
+				</div>
+				<button type="submit">Änderungen speichern</button>
+			</form>
+		</section>
+	</main>
+</body>
+</html>

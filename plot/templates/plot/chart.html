@@ -1,24 +1,49 @@
 {% load static %}
 <!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>LoRa Data Plot</title>
+	<title>Temperaturüberwachung</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 	<script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
 	<link rel="stylesheet" href="{% static 'plot/css/chart.css' %}">
 </head>
 <body>
-	<div class="page-shell">
-		<header class="page-header">
-			<h1 class="page-title">LoRa Temperature Monitoring</h1>
-			<a href="{% url 'export_csv' %}" class="download-btn" download>Download CSV</a>
-		</header>
+	<header class="topbar">
+		<div class="topbar-left">
+			<span class="brand">TEMPERATURÜBERWACHUNG</span>
+			<span class="sep">|</span>
+			<span class="count-online" id="countOnline">– ONLINE</span>
+			<span class="sep" id="countSep" hidden>|</span>
+			<span class="count-offline" id="countOffline" hidden></span>
+		</div>
+		<div class="topbar-right">
+			<span class="range-label">ZEITFENSTER</span>
+			<div class="time-range" id="timeRange"></div>
+			<a href="{% url 'export_csv' %}" class="csv-btn" download>CSV</a>
+		</div>
+	</header>
 
-		<section class="chart-panel">
-			<div id="main"></div>
+	<main class="content">
+		<section>
+			<div class="section-label">GESAMTÜBERSICHT — ALLE SENSOREN</div>
+			<div class="overview-panel">
+				<div class="overview-chart" id="overviewChart"></div>
+			</div>
+			<div class="legend" id="overviewLegend"></div>
 		</section>
-	</div>
+
+		<section>
+			<div class="section-head">
+				<div class="section-label">EINZELSENSOREN</div>
+				<a href="{% url 'sensor_management' %}" class="csv-btn">SENSOREN</a>
+			</div>
+			<div class="sensor-grid" id="main"></div>
+		</section>
+	</main>
 	<script src="{% static 'plot/js/echarts_plot.js' %}"></script>
 </body>
 </html>
