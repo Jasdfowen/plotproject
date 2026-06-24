@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', function () {
 	// Feste Einstellungen. Hier kannst du Verhalten ändern, ohne die Logik anzufassen.
 
 	var POLL_INTERVAL_MS  = 10000;            // Wie oft neue Daten geholt werden (10 s).
-	var OFFLINE_THRESHOLD = 60 * 1000;   // Ab welcher Funkstille ein Sensor als offline gilt (10 min in ms).
+	var OFFLINE_THRESHOLD = 60 * 1000;   // Ab welcher Funkstille ein Sensor als offline gilt (aktuell 60 s).
 
 	// Auswählbare Zeitfenster für die Buttons oben rechts. "min" = Fensterbreite in Minuten.
 	var TIME_PRESETS = [
@@ -77,8 +77,10 @@ document.addEventListener('DOMContentLoaded', function () {
 	function nodeName(node) { return 'Sensor ' + String(node).padStart(2, '0'); }
 
 	// Anzeigename: der in der Sensorverwaltung vergebene Name (kommt als sensor.name
-	// aus der API), sonst Fallback auf die Kurz-ID "S03".
+	// aus der API), sonst Fallback auf die Kurz-ID "S03" (für die kompakte Legende/Tooltip).
 	function displayName(sensor) { return sensor.name || nodeId(sensor.node); }
+	// Wie displayName, aber mit dem längeren Fallback "Sensor 03" für die Karten-Kopfzeile.
+	function cardName(sensor)    { return sensor.name || nodeName(sensor.node); }
 
 	// Liefert die feste Farbe eines Sensors. Beim ersten Aufruf für eine Node wird
 	// die nächste freie Palettenfarbe vergeben und gemerkt, damit sie konstant bleibt.
@@ -304,7 +306,7 @@ document.addEventListener('DOMContentLoaded', function () {
 		// Kopf: ID + Name. innerHTML ist hier unkritisch, da der Inhalt aus festen Zahlen besteht.
 		var head = document.createElement('div');
 		head.innerHTML = '<div class="sensor-id">' + nodeId(sensor.node) + '</div>' +
-		                 '<div class="sensor-name">' + (sensor.name || nodeName(sensor.node)) + '</div>';
+		                 '<div class="sensor-name">' + cardName(sensor) + '</div>';
 		info.appendChild(head);
 		var nameEl = head.querySelector('.sensor-name');   // Namens-Zeile merken, wird bei jedem Poll aktualisiert.
 
@@ -338,8 +340,7 @@ document.addEventListener('DOMContentLoaded', function () {
 			tooltip: chartTooltip(),
 			xAxis:   timeAxis(false),   // Ohne Achsenbeschriftung (kleine Fläche).
 			yAxis:   valueAxis(9),
-			series:  [{ type: 'line', smooth: true, showSymbol: false,
-			            lineStyle: { width: 1.5, color: color }, itemStyle: { color: color }, data: [] }]
+			series:  [{ type: 'line', data: [] }]   // Platzhalter; updateCard() ersetzt ihn sofort via lineSeries().
 		});
 
 		// Alle Bestandteile der Karte merken, damit updateCard() sie schnell findet.
@@ -353,7 +354,7 @@ document.addEventListener('DOMContentLoaded', function () {
 		var offline = isOffline(sensor);
 
 		// Name bei jedem Poll neu setzen, damit Umbenennungen ohne Reload erscheinen.
-		ref.nameEl.textContent = sensor.name || nodeName(sensor.node);
+		ref.nameEl.textContent = cardName(sensor);
 
 		// Letzten Messwert und dessen Zeitpunkt bestimmen.
 		var temps    = sensor.temperatures || [], dates = sensor.dates || [];

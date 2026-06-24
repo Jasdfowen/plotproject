@@ -64,5 +64,5 @@
 }
 
 .sensor-form button:hover {
-	background: #007a99;
+	background: var(--accent-hover);
 }

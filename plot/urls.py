@@ -9,4 +9,5 @@ urlpatterns = [
     path("temperature-data/", views.temperature_data, name="temperature_data"),
     path("export-csv/", views.export_csv, name="export_csv"),
     path("sensor-management/", views.sensor_management, name="sensor_management"),
+    path("sensor-history", views.sensor_history, name="sensor_history"),
 ]

@@ -46,6 +46,6 @@
 	cursor: pointer;
 }
 
-.login-form button:hover { background: #007a99; }
+.login-form button:hover { background: var(--accent-hover); }
 
 .login-error { color: var(--offline); font-size: 11px; margin-top: 10px; }

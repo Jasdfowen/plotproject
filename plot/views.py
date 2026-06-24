@@ -1,10 +1,9 @@
-from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import render
 from django.http import JsonResponse
 from django.utils import timezone
 import csv
 from django.http import HttpResponse
 from datetime import timedelta
+from collections import Counter
 
 from django.shortcuts import render, redirect
 from .models import SensorTemperature, SensorNodes
@@ -64,3 +63,19 @@ def sensor_management(request):
         SensorNodes.objects.get_or_create(node=node)
     sensors = SensorNodes.objects.order_by('node')
     return render(request, "plot/sensor_management.html", {"sensors": sensors})
+
+def sensor_history(request):
+    sensors = []
+    nodes = SensorTemperature.objects.values_list('node', flat=True).distinct().order_by('node')
+    for node in nodes:
+        temps  = list(SensorTemperature.objects.filter(node=node).values_list('temperature', flat=True))
+        counts = Counter(round(t) for t in temps)
+        bins   = sorted(counts)
+        sensors.append({
+            'node':   node,
+            'labels': [f"{b} °C" for b in bins],
+            'values': [counts[b] for b in bins],
+            'total':  len(temps),
+        })
+    return render(request, "plot/sensor_history.html", {"sensors": sensors})
+

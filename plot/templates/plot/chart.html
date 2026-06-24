@@ -23,6 +23,7 @@
 		<div class="topbar-right">
 			<span class="range-label">ZEITFENSTER</span>
 			<div class="time-range" id="timeRange"></div>
+			<a href="{% url 'sensor_history' %}" class="csv-btn">VERTEILUNG</a>
 			<a href="{% url 'export_csv' %}" class="csv-btn" download>CSV</a>
 		</div>
 	</header>
@@ -39,7 +40,7 @@
 		<section>
 			<div class="section-head">
 				<div class="section-label">EINZELSENSOREN</div>
-				<a href="{% url 'sensor_management' %}" class="csv-btn">SENSOREN</a>
+				<a href="{% url 'sensor_management' %}" class="csv-btn">SENSOREINSTELLUNGEN</a>
 			</div>
 			<div class="sensor-grid" id="main"></div>
 		</section>

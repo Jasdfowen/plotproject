@@ -1,0 +1,127 @@
+{% load static %}
+<!doctype html>
+<html lang="de">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Temperaturverteilung</title>
+	<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+	<script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+	<link rel="stylesheet" href="{% static 'plot/css/chart.css' %}">
+	<link rel="stylesheet" href="{% static 'plot/css/sensor_history.css' %}">
+</head>
+<body>
+	<header class="topbar">
+		<div class="topbar-left">
+			<span class="brand">TEMPERATURVERTEILUNG</span>
+			<span class="sep">|</span>
+			<span class="range-label">ALLE SENSOREN</span>
+		</div>
+		<div class="topbar-right">
+			<a href="{% url 'chart' %}" class="csv-btn">ZURÜCK</a>
+		</div>
+	</header>
+
+	<main class="content">
+		{% for s in sensors %}
+			<section>
+				<div class="section-label">SENSOR {{ s.node }} — {{ s.total }} MESSWERTE</div>
+				<div class="overview-panel">
+					<div class="hist-chart" id="chart-{{ s.node }}"></div>
+				</div>
+			</section>
+		{% empty %}
+			<p class="hist-none">Keine Sensoren mit Daten vorhanden.</p>
+		{% endfor %}
+	</main>
+
+	{# Alle Histogramm-Daten in einem Rutsch, sicher als JSON ins HTML eingebettet. #}
+	{{ sensors|json_script:"sensors-data" }}
+
+	<script>
+	document.addEventListener('DOMContentLoaded', function () {
+		var sensors = JSON.parse(document.getElementById('sensors-data').textContent);
+		var charts  = [];   // Referenzen merken, um bei Resize alle neu zu vermessen.
+
+		// Baut die ECharts-Konfiguration für ein Sensor-Histogramm.
+		function histOption(s) {
+			var labels  = s.labels;
+			var counts  = s.values;
+			// Klassen-Mittelpunkte aus den Labels ("20.3 °C" -> 20.3) für die Mittellinie.
+			var centers = labels.map(function (l) { return parseFloat(l); });
+			var total   = counts.reduce(function (a, b) { return a + b; }, 0);
+
+			// Gewichteter Mittelwert und die ihm am nächsten liegende Klasse.
+			var mean = 0;
+			for (var i = 0; i < centers.length; i++) { mean += centers[i] * counts[i]; }
+			mean = total ? mean / total : 0;
+			var meanIdx = 0, best = Infinity;
+			centers.forEach(function (x, idx) {
+				var d = Math.abs(x - mean);
+				if (d < best) { best = d; meanIdx = idx; }
+			});
+
+			return {
+				grid:    { left: 48, right: 24, top: 16, bottom: 36 },
+				tooltip: {
+					trigger: 'axis',
+					backgroundColor: '#ffffff',
+					borderColor: '#d3dae0',
+					textStyle: { color: '#1e2630', fontFamily: 'JetBrains Mono', fontSize: 11 }
+				},
+				// X-Achse: die Temperaturklassen ("20.3 °C"). category, weil die Labels fertig sind.
+				xAxis: {
+					type: 'category',
+					data: labels,
+					axisLabel: { color: '#7c8a96', fontSize: 10, fontFamily: 'JetBrains Mono' },
+					axisLine:  { lineStyle: { color: '#d3dae0' } },
+					axisTick:  { show: false }
+				},
+				// Y-Achse: wie oft ein Wert in diese Klasse fiel.
+				yAxis: {
+					type: 'value',
+					name: 'Anzahl',
+					nameTextStyle: { color: '#7c8a96', fontSize: 10, fontFamily: 'JetBrains Mono' },
+					axisLabel: { color: '#7c8a96', fontSize: 10, fontFamily: 'JetBrains Mono' },
+					axisLine:  { show: false },
+					axisTick:  { show: false },
+					splitLine: { lineStyle: { color: '#e2e7eb', type: 'dashed' } }
+				},
+				// Balken berühren sich (Gap 0), helle Füllung mit blauem Rand.
+				series: [{
+					type: 'bar',
+					data: counts,
+					barCategoryGap: '0%',
+					itemStyle: { color: '#bfe0f2', borderColor: '#4a90c2', borderWidth: 1 },
+					markLine: {
+						symbol: 'none',
+						data: [{ xAxis: labels[meanIdx] }],     // gestrichelte Linie am Mittelwert.
+						lineStyle: { color: '#9aa6b0', type: 'dashed' },
+						label: { show: false }
+					}
+				}]
+			};
+		}
+
+		// Für jeden Sensor das passende Chart-div finden und befüllen.
+		sensors.forEach(function (s) {
+			var el = document.getElementById('chart-' + s.node);
+			if (!el) { return; }
+			if (!s.labels.length) {                          // Sensor ohne Daten → Hinweis statt Chart.
+				el.classList.add('hist-chart--empty');
+				el.textContent = 'Keine Daten für diesen Sensor.';
+				return;
+			}
+			var chart = echarts.init(el);
+			chart.setOption(histOption(s));
+			charts.push(chart);
+		});
+
+		// Bei Fenstergröße-Änderung alle Charts neu vermessen.
+		window.addEventListener('resize', function () {
+			charts.forEach(function (c) { c.resize(); });
+		});
+	});
+	</script>
+</body>
+</html>
