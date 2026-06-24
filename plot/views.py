@@ -18,15 +18,18 @@ def temperature_data(request):
         data[entry.node]['dates'].append(entry.date.isoformat())
         data[entry.node]['temperatures'].append(round(entry.temperature, 1))
 
-    #Add alias to nodes
-    names = dict(SensorNodes.objects.values_list('node', 'name'))
+    # Name + Schwellwert je Node in einem Query
+    meta = {n: (name, threshold)
+            for n, name, threshold in SensorNodes.objects.values_list('node', 'name', 'threshold')}
 
     # Convert to list for easier JS handling
     sensors = []
     for node, readings in data.items():
+        name, threshold = meta.get(node, ('', None))
         sensors.append({
             'node': node,
-            'name': names.get(node, ''),
+            'name': name,
+            'threshold': threshold,
             'dates': readings['dates'],
             'temperatures': readings['temperatures']
         })

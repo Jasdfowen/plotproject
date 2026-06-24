@@ -113,6 +113,32 @@ document.addEventListener('DOMContentLoaded', function () {
 		return isNaN(t) ? true : (Date.now() - t > OFFLINE_THRESHOLD);
 	}
 
+	// Letzter Messwert eines Sensors (Zahl) oder null, falls keine Daten.
+	function lastTemp(sensor) {
+		var temps = sensor.temperatures || [];
+		return temps.length ? temps[temps.length - 1] : null;
+	}
+
+	// true, wenn der letzte Messwert über dem Grenzwert liegt. sensor.threshold kommt aus
+	// der API; ist keiner gesetzt (null/undefined), gibt es nie Alarm.
+	function isOverThreshold(sensor) {
+		if (sensor.threshold == null) { return false; }
+		var t = lastTemp(sensor);
+		return t != null && t > sensor.threshold;
+	}
+
+	// Waagerechte gestrichelte Linie auf Schwellwerthöhe für ein Karten-Chart
+	// (leere data-Liste, wenn kein Grenzwert gesetzt ist → keine Linie).
+	function thresholdMarkLine(sensor) {
+		if (sensor.threshold == null) { return { data: [] }; }
+		return {
+			symbol: 'none', silent: true,
+			data: [{ yAxis: sensor.threshold }],
+			lineStyle: { color: '#d12f2f', type: 'dashed' },   // Alarmrot (= --offline)
+			label: { show: false }
+		};
+	}
+
 	// Zentrale Regel für die Linienfarbe eines Sensors: grau wenn offline, sonst seine feste Farbe.
 	// Steht nur hier, damit eine Farbänderung an einer einzigen Stelle wirkt.
 	function lineColor(sensor) {
@@ -352,31 +378,36 @@ document.addEventListener('DOMContentLoaded', function () {
 	function updateCard(sensor, bounds) {
 		var ref = ensureCard(sensor);          // Karte holen (oder beim ersten Mal anlegen).
 		var offline = isOffline(sensor);
+		var alarm   = !offline && isOverThreshold(sensor);   // Offline hat Vorrang vor Alarm.
 
 		// Name bei jedem Poll neu setzen, damit Umbenennungen ohne Reload erscheinen.
 		ref.nameEl.textContent = cardName(sensor);
 
 		// Letzten Messwert und dessen Zeitpunkt bestimmen.
-		var temps    = sensor.temperatures || [], dates = sensor.dates || [];
-		var lastTemp = temps.length ? temps[temps.length - 1] : null;
-		var lastMs   = lastTimestampMs(sensor);
+		var last   = lastTemp(sensor);
+		var lastMs = lastTimestampMs(sensor);
 
-		// Offline-Optik der Karte umschalten.
+		// Zustand der Karte umschalten: offline > alarm > normal.
 		ref.root.classList.toggle('sensor-card--offline', offline);
-		ref.valueEl.style.color   = offline ? '#3a4a58' : ref.color;   // Wert gedimmt, wenn offline.
-		ref.valueEl.textContent   = (lastTemp == null) ? '—' : Number(lastTemp).toFixed(1);  // 1 Nachkommastelle.
+		ref.root.classList.toggle('sensor-card--alarm', alarm);
+		ref.valueEl.style.color = offline ? '#3a4a58' : (alarm ? 'var(--offline)' : ref.color);
+		ref.valueEl.textContent = (last == null) ? '—' : Number(last).toFixed(1);  // 1 Nachkommastelle.
 
 		if (offline) {
 			ref.statusEl.innerHTML = '<span class="sensor-badge">OFFLINE</span>';
+		} else if (alarm) {
+			ref.statusEl.innerHTML = '<span class="sensor-badge sensor-badge--alarm">ÜBER GRENZWERT</span>';
 		} else {
 			ref.statusEl.className   = 'sensor-time';
 			ref.statusEl.textContent = isNaN(lastMs) ? '—' : formatClock(lastMs);  // Uhrzeit der letzten Messung.
 		}
 
-		// Linie und Zeitfenster des Mini-Charts aktualisieren (gleicher Serien-Helfer wie oben).
+		// Linie + Zeitfenster des Mini-Charts; zusätzlich die Schwellwertlinie (falls gesetzt).
+		var series = lineSeries(sensor, 1.5);
+		series.markLine = thresholdMarkLine(sensor);
 		ref.chart.setOption({
 			xAxis:  { min: bounds.start, max: bounds.end },
-			series: [ lineSeries(sensor, 1.5) ]
+			series: [ series ]
 		});
 	}
 
@@ -386,6 +417,7 @@ document.addEventListener('DOMContentLoaded', function () {
 	function updateCounts(sensors) {
 		var online  = sensors.filter(function (s) { return !isOffline(s); }).length;
 		var offline = sensors.length - online;
+		var alarm   = sensors.filter(function (s) { return !isOffline(s) && isOverThreshold(s); }).length;
 
 		document.getElementById('countOnline').textContent = online + ' ONLINE';
 
@@ -397,6 +429,16 @@ document.addEventListener('DOMContentLoaded', function () {
 			off.hidden = false; sep.hidden = false;
 		} else {
 			off.hidden = true;  sep.hidden = true;
+		}
+
+		// Dasselbe für die Anzahl der Sensoren über Grenzwert.
+		var sep2 = document.getElementById('countSep2');
+		var al   = document.getElementById('countAlarm');
+		if (alarm > 0) {
+			al.textContent = alarm + ' ÜBER GRENZWERT';
+			al.hidden = false; sep2.hidden = false;
+		} else {
+			al.hidden = true;  sep2.hidden = true;
 		}
 	}
 

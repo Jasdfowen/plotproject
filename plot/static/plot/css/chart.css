@@ -15,6 +15,7 @@
 	--offline:        #d12f2f;
 	--offline-bg:     #fbe4e4;
 	--offline-border: #f0bcbc;
+	--online:         #1a9850;
 }
 
 * { box-sizing: border-box; }
@@ -52,8 +53,9 @@ body {
 
 .sep { color: var(--border); }
 
-.count-online  { color: var(--muted); font-size: 10px; letter-spacing: 0.08em; }
-.count-offline { color: var(--offline); font-size: 10px; letter-spacing: 0.08em; }
+.count-online  { color: var(--online);  font-size: 10px; letter-spacing: 0.08em; }
+.count-offline { color: var(--muted);    font-size: 10px; letter-spacing: 0.08em; }
+.count-alarm   { color: var(--offline);  font-size: 10px; letter-spacing: 0.08em; }
 
 .range-label { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; }
 
@@ -160,6 +162,10 @@ body {
 
 .sensor-card--offline { border-color: var(--offline-bg); }
 
+/* Über Grenzwert: kräftig roter Rahmen, deutlich stärker als der blasse Offline-Rahmen. */
+.sensor-card--alarm { border-color: var(--offline); }
+.sensor-card--alarm .sensor-info { border-right-color: var(--offline); }
+
 .sensor-info {
 	display: flex;
 	flex-direction: column;
@@ -187,12 +193,19 @@ body {
 
 .sensor-badge {
 	display: inline-block;
-	background: var(--offline-bg);
-	border: 1px solid var(--offline-border);
-	color: var(--offline);
+	background: var(--border-soft);
+	border: 1px solid var(--border);
+	color: var(--muted2);
 	font-size: 9px;
 	letter-spacing: 0.12em;
 	padding: 2px 6px;
+}
+
+/* Alarm-Badge ("ÜBER GRENZWERT") bleibt rot – im Gegensatz zum grauen OFFLINE-Badge. */
+.sensor-badge--alarm {
+	background: var(--offline-bg);
+	border-color: var(--offline-border);
+	color: var(--offline);
 }
 
 .sensor-chart { height: 110px; padding: 8px 8px 8px 0; }
