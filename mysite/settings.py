@@ -30,7 +30,13 @@ ALLOWED_HOSTS = ['192.168.2.65', 'localhost', '127.0.0.1']
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'  # Nach erfolgreichem Login hierhin weiterleiten
-
+CSRF_TRUSTED_ORIGINS = [
+    "https://192.168.2.65",
+    "https://localhost",
+    "http://192.168.2.65",
+    "http://localhost",
+    "http://127.0.0.1",
+]
 
 # Application definition
 
