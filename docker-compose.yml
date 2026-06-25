@@ -16,17 +16,20 @@ services:
     command: python lora_receiver.py
     volumes:
       - ./db.sqlite3:/app/db.sqlite3
-    devices:
-      - "/dev/ttyACM0:/dev/ttyACM0" #comment out when not using a LoRa device
+    #devices:
+     # - "/dev/ttyACM0:/dev/ttyACM0" #comment out when not using a LoRa device
     restart: unless-stopped
 
   nginx:
     image: nginx:stable
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./staticfiles:/app/staticfiles:ro
+      - ./certs/server.crt:/etc/nginx/certs/server.crt:ro
+      - ./certs/server.key:/etc/nginx/certs/server.key:ro
     depends_on:
       - web
     restart: unless-stopped
