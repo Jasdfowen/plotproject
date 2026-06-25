@@ -1,0 +1,30 @@
+services:
+
+  web:
+    build: .
+    expose:
+      - "8000"
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
+      - ./staticfiles:/app/staticfiles
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  lora-rx:
+    build: .
+    command: python lora_receiver.py
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:stable
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./staticfiles:/app/staticfiles:ro
+    depends_on:
+      - web
+    restart: unless-stopped
