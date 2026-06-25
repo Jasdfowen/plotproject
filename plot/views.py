@@ -73,7 +73,9 @@ def sensor_history(request):
     for node in nodes:
         temps  = list(SensorTemperature.objects.filter(node=node).values_list('temperature', flat=True))
         counts = Counter(round(t) for t in temps)
-        bins   = sorted(counts)
+        # Lückenlose Klassen von min bis max: fehlende Grade (z. B. 29 zwischen 28 und 30)
+        # erscheinen als leerer Balken (counts[b] == 0), statt dass die Nachbarn zusammenrücken.
+        bins   = range(min(counts), max(counts) + 1) if counts else []
         sensors.append({
             'node':   node,
             'labels': [f"{b} °C" for b in bins],

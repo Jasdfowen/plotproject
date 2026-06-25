@@ -60,8 +60,8 @@ def dummy_receive_loop() -> None:
 
 def read_serial_port() -> None:
     ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)  # Adjust port and baud rate as needed
-    #Pattern on serial port: Start Receive: 1,23.9,24.6,-0.6 :End Receive
-    pattern = re.compile(r'Start Receive: (\d+),([\d.-]+),([\d.-]+),([\d.-]+) :End Receive') 
+    #Pattern on serial port: Start Receive: 1,23.9 :End Receive
+    pattern = re.compile(r'Start Receive: (\d+),([\d.-]+) :End Receive') 
     while True:
         try:
             line = ser.readline().decode('utf-8').strip()
@@ -69,7 +69,7 @@ def read_serial_port() -> None:
                 match = pattern.match(line)
                 if match:
                     node_id = int(match.group(1))
-                    temp = float(match.group(2))  # Assuming the second value is temperature
+                    temp = float(match.group(2))  
                     on_packet_received(f"{node_id},{temp}".encode('utf-8'))
                 else:
                     print(f"Unrecognized line: {line}")
