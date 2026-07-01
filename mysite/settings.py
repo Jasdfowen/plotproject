@@ -38,6 +38,9 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1",
 ]
 
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 365  # 1 Jahr in Sekunden
+
 # Application definition
 
 INSTALLED_APPS = [

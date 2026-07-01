@@ -120,4 +120,6 @@
 - Ergänzt den CSV-Export um die visuelle Variante
 
 
-**Letzter Messwert Zeitpunkt fehlt aktuell
+**Letzter Messwert Zeitpunkt fehlt aktuell**
+
+**Hinzufügen Durchschnitt, Min, Max, bei anklicken vergrößern und hintergrund unscharf machen**
