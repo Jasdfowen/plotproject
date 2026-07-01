@@ -1,0 +1,43 @@
+{% load static %}
+<!doctype html>
+<html lang="de">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Temperaturverlauf</title>
+	<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+	<script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+	<link rel="stylesheet" href="{% static 'plot/css/chart.css' %}">
+	<link rel="stylesheet" href="{% static 'plot/css/history.css' %}">
+</head>
+<body>
+	<header class="topbar">
+		<div class="topbar-left">
+			<span class="brand">TEMPERATURVERLAUF</span>
+			<span class="sep">|</span>
+			<span class="range-label">HISTORISCHE ANSICHT</span>
+		</div>
+		<div class="topbar-right">
+			<a href="{% url 'sensor_history' %}" class="csv-btn">VERTEILUNG</a>
+			<a href="{% url 'export_csv' %}" class="csv-btn" download>CSV</a>
+			<a href="{% url 'chart' %}" class="csv-btn">ZURÜCK</a>
+		</div>
+	</header>
+
+	<main class="content">
+		<section>
+			<div class="hist-controls">
+				<label class="hist-field">VON <input type="datetime-local" id="startInput"></label>
+				<label class="hist-field">BIS <input type="datetime-local" id="endInput"></label>
+				<button type="button" id="loadBtn">LADEN</button>
+				<span class="range-label" id="status"></span>
+			</div>
+			<div class="overview-panel">
+				<div class="history-chart" id="historyChart"></div>
+			</div>
+		</section>
+	</main>
+
+	<script src="{% static 'plot/js/history_plot.js' %}"></script>
+</body>
+</html>

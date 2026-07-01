@@ -1,0 +1,51 @@
+/* Temperaturverlauf (historische Ansicht). Ergänzt chart.css — wird zusätzlich geladen. */
+
+/* Steuerleiste: Von/Bis-Auswahl + Laden-Button oberhalb des Charts. */
+.hist-controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+
+/* Ein Feld = Label + Eingabe nebeneinander. */
+.hist-field {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--muted);
+	font-size: 10px;
+	letter-spacing: 0.1em;
+}
+
+.hist-field input {
+	font-family: inherit;
+	font-size: 12px;
+	padding: 4px 6px;
+	color: var(--text);
+	background: var(--panel);
+	border: 1px solid var(--border);
+}
+
+.hist-field input:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+
+/* Laden-Button in der Akzentfarbe (wie in der Sensorverwaltung). */
+#loadBtn {
+	font-family: inherit;
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	padding: 5px 14px;
+	color: #ffffff;
+	background: var(--accent);
+	border: none;
+	cursor: pointer;
+}
+
+#loadBtn:hover { background: var(--accent-hover); }
+
+/* Großes Verlaufs-Chart mit Platz für Legende oben und Zoom-Slider unten. */
+.history-chart { width: 100%; height: 560px; }

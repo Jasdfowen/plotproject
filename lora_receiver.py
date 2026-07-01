@@ -18,7 +18,11 @@ DB_PATH = Path(__file__).parent / 'db.sqlite3'
 def save_reading(node: int, temperature: float) -> None:
     """Insert one temperature reading into the database."""
     try:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        # Django/SQLite erwartet das Format "YYYY-MM-DD HH:MM:SS.ffffff" (UTC, ohne 'T'
+        # und ohne Offset). .isoformat() würde "…T…+00:00" schreiben; SQLite vergleicht
+        # Datums-Strings zeichenweise, und 'T' (84) > ' ' (32) lässt dann alle Werte
+        # fälschlich "größer" wirken → date__lte-/Range-Filter liefern nichts.
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')
         con = sqlite3.connect(DB_PATH)
         con.execute('PRAGMA journal_mode=WAL')
         con.execute(
@@ -53,8 +57,8 @@ def on_packet_received(raw_bytes: bytes) -> None:
 def dummy_receive_loop() -> None:
     """Dummy loop for testing without LoRa hardware."""
     while True:
-        node_id = random.randint(1, 3)
-        temp = 20 + 5 * (1 + time.time() % 60 / 60) 
+        node_id = random.randint(1, 2)
+        temp = 10*node_id + 5 * (1 + time.time() % 60 / 60) 
         on_packet_received(f"{node_id},{temp}".encode('utf-8'))
         time.sleep(5)
 

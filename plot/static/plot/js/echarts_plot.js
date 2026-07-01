@@ -223,7 +223,8 @@ document.addEventListener('DOMContentLoaded', function () {
 			btn.addEventListener('click', function () {
 				windowMin = preset.min;              // Neues Fenster übernehmen ...
 				markActiveRange();                   // ... aktiven Button hervorheben ...
-				render(lastSensors);                 // ... und sofort mit vorhandenen Daten neu zeichnen.
+				render(lastSensors);                 // ... sofort mit vorhandenen Daten neu zeichnen ...
+				loadAndRender();                     // ... und die passende Datenmenge fürs neue Fenster nachladen.
 			});
 			rangeContainer.appendChild(btn);
 		});
@@ -460,7 +461,8 @@ document.addEventListener('DOMContentLoaded', function () {
 	function loadAndRender() {
 		if (inFlight) { return; }          // Läuft schon ein Abruf? Dann diesen überspringen.
 		inFlight = true;
-		fetch('/temperature-data/')
+		// Nur das aktuell gewählte Zeitfenster anfragen (Minuten), statt immer alles zu laden.
+		fetch('/temperature-data/?minutes=' + windowMin)
 			.then(function (r) { return r.json(); })          // Antwort als JSON parsen.
 			.then(function (json) {
 				lastSensors = json.sensors || [];             // Daten merken (für Toggle/Range ohne neuen Abruf).

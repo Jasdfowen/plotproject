@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 import csv
 from django.http import HttpResponse
 from datetime import timedelta
@@ -9,22 +10,38 @@ from django.shortcuts import render, redirect
 from .models import SensorTemperature, SensorNodes
 
 def temperature_data(request):
-    # Only return the last 30 days of readings, grouped by node.
-    cutoff = timezone.now() - timedelta(days=30)
+    # Zeitfenster als Query-Parameter (?minutes=…): nur so viele Daten zurückgeben,
+    # wie das aktuell gewählte Fenster im Frontend braucht. Default 15 min, begrenzt
+    # auf 1 min … 30 Tage gegen fehlerhafte oder zu große Anfragen.
+    try:
+        minutes = int(request.GET.get('minutes', 15))
+    except (TypeError, ValueError):
+        minutes = 15
+    minutes = max(1, min(minutes, 60 * 24 * 30))
+    cutoff = timezone.now() - timedelta(minutes=minutes)
+
+    # Messwerte im Fenster, nach Node gruppiert.
     data = {}
     for entry in SensorTemperature.objects.filter(date__gte=cutoff).order_by('node', 'date'):
-        if entry.node not in data:
-            data[entry.node] = {'dates': [], 'temperatures': []}
-        data[entry.node]['dates'].append(entry.date.isoformat())
-        data[entry.node]['temperatures'].append(round(entry.temperature, 1))
+        readings = data.setdefault(entry.node, {'dates': [], 'temperatures': []})
+        readings['dates'].append(entry.date.isoformat())
+        readings['temperatures'].append(round(entry.temperature, 1))
 
     # Name + Schwellwert je Node in einem Query
     meta = {n: (name, threshold)
             for n, name, threshold in SensorNodes.objects.values_list('node', 'name', 'threshold')}
 
-    # Convert to list for easier JS handling
+    # Alle Nodes mit Verlauf durchgehen – auch die, die im Fenster nichts gesendet haben.
     sensors = []
-    for node, readings in data.items():
+    for node in SensorTemperature.objects.values_list('node', flat=True).distinct().order_by('node'):
+        readings = data.get(node)
+        if readings is None:
+            # Kein Wert im Fenster → letzten bekannten Messwert mitgeben, damit die Karte
+            # samt OFFLINE-Badge, letztem Wert und Uhrzeit sichtbar bleibt (sonst würde ein
+            # länger als das Fenster stiller Sensor komplett aus dem Dashboard verschwinden).
+            last = SensorTemperature.objects.filter(node=node).order_by('-date').first()
+            readings = ({'dates': [last.date.isoformat()], 'temperatures': [round(last.temperature, 1)]}
+                        if last else {'dates': [], 'temperatures': []})
         name, threshold = meta.get(node, ('', None))
         sensors.append({
             'node': node,
@@ -48,6 +65,48 @@ def export_csv(request):
 
 def chart(request):
     return render(request, "plot/chart.html")
+
+def history(request):
+    return render(request, "plot/history.html")
+
+def history_data(request):
+    # Historische Messwerte für einen frei wählbaren Zeitraum (start/end als ISO-Strings,
+    # z. B. "2026-07-01T10:00:00Z"). Anders als temperature_data gibt es hier keine Live-
+    # oder Offline-Logik: es wird genau der angefragte Zeitraum geliefert. Fehlt ein
+    # Parameter, gilt die letzte 24 h.
+    def _aware(dt):
+        # datetime-local liefert ggf. eine naive Zeit; bei USE_TZ=True müssen wir sie
+        # in eine zeitzonenbewusste Zeit wandeln, sonst warnt/patzt der Filter.
+        if dt and timezone.is_naive(dt):
+            return timezone.make_aware(dt, timezone.get_current_timezone())
+        return dt
+
+    end   = _aware(parse_datetime(request.GET.get('end', '')   or '')) or timezone.now()
+    start = _aware(parse_datetime(request.GET.get('start', '') or '')) or (end - timedelta(hours=24))
+
+    data = {}
+    for entry in (SensorTemperature.objects
+                  .filter(date__gte=start, date__lte=end)
+                  .order_by('node', 'date')):
+        readings = data.setdefault(entry.node, {'dates': [], 'temperatures': []})
+        readings['dates'].append(entry.date.isoformat())
+        readings['temperatures'].append(round(entry.temperature, 1))
+
+    # Name + Schwellwert je Node in einem Query
+    meta = {n: (name, threshold)
+            for n, name, threshold in SensorNodes.objects.values_list('node', 'name', 'threshold')}
+
+    sensors = []
+    for node in sorted(data):
+        name, threshold = meta.get(node, ('', None))
+        sensors.append({
+            'node': node,
+            'name': name,
+            'threshold': threshold,
+            'dates': data[node]['dates'],
+            'temperatures': data[node]['temperatures']
+        })
+    return JsonResponse({'start': start.isoformat(), 'end': end.isoformat(), 'sensors': sensors})
 
 def sensor_management(request):
     if request.method == "POST":
