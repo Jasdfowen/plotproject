@@ -9,6 +9,33 @@ from collections import Counter
 from django.shortcuts import render, redirect
 from .models import SensorTemperature, SensorNodes
 
+
+# ── Gemeinsame Helfer für die JSON-Endpoints ────────────────────────────────
+# temperature_data und history_data liefern dasselbe Sensor-Format; die
+# Gruppierung/Serialisierung liegt daher nur hier, an einer Stelle.
+
+def _group_by_node(readings):
+    """Gruppiert ein nach (node, date) sortiertes Messwert-Queryset nach Node
+    zu {node: {'dates': [...], 'temperatures': [...]}}."""
+    data = {}
+    for e in readings:
+        r = data.setdefault(e.node, {'dates': [], 'temperatures': []})
+        r['dates'].append(e.date.isoformat())
+        r['temperatures'].append(round(e.temperature, 1))
+    return data
+
+def _node_meta():
+    """Name + Schwellwert je Node in einem Query."""
+    return {n: (name, threshold)
+            for n, name, threshold in SensorNodes.objects.values_list('node', 'name', 'threshold')}
+
+def _sensor_entry(node, readings, meta):
+    """Baut das JSON-Objekt eines Sensors (Node + Meta + Messreihen)."""
+    name, threshold = meta.get(node, ('', None))
+    return {'node': node, 'name': name, 'threshold': threshold,
+            'dates': readings['dates'], 'temperatures': readings['temperatures']}
+
+
 def temperature_data(request):
     # Zeitfenster als Query-Parameter (?minutes=…): nur so viele Daten zurückgeben,
     # wie das aktuell gewählte Fenster im Frontend braucht. Default 15 min, begrenzt
@@ -21,15 +48,8 @@ def temperature_data(request):
     cutoff = timezone.now() - timedelta(minutes=minutes)
 
     # Messwerte im Fenster, nach Node gruppiert.
-    data = {}
-    for entry in SensorTemperature.objects.filter(date__gte=cutoff).order_by('node', 'date'):
-        readings = data.setdefault(entry.node, {'dates': [], 'temperatures': []})
-        readings['dates'].append(entry.date.isoformat())
-        readings['temperatures'].append(round(entry.temperature, 1))
-
-    # Name + Schwellwert je Node in einem Query
-    meta = {n: (name, threshold)
-            for n, name, threshold in SensorNodes.objects.values_list('node', 'name', 'threshold')}
+    data = _group_by_node(SensorTemperature.objects.filter(date__gte=cutoff).order_by('node', 'date'))
+    meta = _node_meta()
 
     # Alle Nodes mit Verlauf durchgehen – auch die, die im Fenster nichts gesendet haben.
     sensors = []
@@ -42,14 +62,7 @@ def temperature_data(request):
             last = SensorTemperature.objects.filter(node=node).order_by('-date').first()
             readings = ({'dates': [last.date.isoformat()], 'temperatures': [round(last.temperature, 1)]}
                         if last else {'dates': [], 'temperatures': []})
-        name, threshold = meta.get(node, ('', None))
-        sensors.append({
-            'node': node,
-            'name': name,
-            'threshold': threshold,
-            'dates': readings['dates'],
-            'temperatures': readings['temperatures']
-        })
+        sensors.append(_sensor_entry(node, readings, meta))
     return JsonResponse({'sensors': sensors})
 
 def export_csv(request):
@@ -84,28 +97,11 @@ def history_data(request):
     end   = _aware(parse_datetime(request.GET.get('end', '')   or '')) or timezone.now()
     start = _aware(parse_datetime(request.GET.get('start', '') or '')) or (end - timedelta(hours=24))
 
-    data = {}
-    for entry in (SensorTemperature.objects
-                  .filter(date__gte=start, date__lte=end)
-                  .order_by('node', 'date')):
-        readings = data.setdefault(entry.node, {'dates': [], 'temperatures': []})
-        readings['dates'].append(entry.date.isoformat())
-        readings['temperatures'].append(round(entry.temperature, 1))
-
-    # Name + Schwellwert je Node in einem Query
-    meta = {n: (name, threshold)
-            for n, name, threshold in SensorNodes.objects.values_list('node', 'name', 'threshold')}
-
-    sensors = []
-    for node in sorted(data):
-        name, threshold = meta.get(node, ('', None))
-        sensors.append({
-            'node': node,
-            'name': name,
-            'threshold': threshold,
-            'dates': data[node]['dates'],
-            'temperatures': data[node]['temperatures']
-        })
+    data = _group_by_node(SensorTemperature.objects
+                          .filter(date__gte=start, date__lte=end)
+                          .order_by('node', 'date'))
+    meta = _node_meta()
+    sensors = [_sensor_entry(node, data[node], meta) for node in sorted(data)]
     return JsonResponse({'start': start.isoformat(), 'end': end.isoformat(), 'sensors': sensors})
 
 def sensor_management(request):
