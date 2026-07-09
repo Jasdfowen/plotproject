@@ -25,13 +25,14 @@ document.addEventListener('DOMContentLoaded', function () {
 	// Auswählbare Zeitfenster für die Buttons oben rechts. "min" = Fensterbreite in Minuten.
 	var TIME_PRESETS = [
 		{ label: '5 min',  min: 5     },
-		{ label: '15 min', min: 15    },
 		{ label: '30 min', min: 30    },
 		{ label: '1 h',    min: 60    },
 		{ label: '2 h',    min: 120   },
-		{ label: '24 h',   min: 60*24 }       // 60*24 = 1440 Minuten = ein Tag.
+		{ label: '6 h',    min: 60*6  },       
+		{ label: '12 h',   min: 60*12 },      
+		{ label: '24 h',   min: 60*24 }       
 	];
-	var DEFAULT_WINDOW_MIN = 15;              // Welches Fenster beim Start aktiv ist (15 min).
+	var DEFAULT_WINDOW_MIN = 30;              // Welches Fenster beim Start aktiv ist (15 min).
 
 	// Farbpalette für die Sensorlinien. Wird der Reihe nach an Sensoren vergeben.
 	// Bewusst kräftige Farben, damit sie auf dem hellen Hintergrund gut sichtbar sind.
@@ -330,12 +331,18 @@ document.addEventListener('DOMContentLoaded', function () {
 		info.className = 'sensor-info';
 		card.appendChild(info);
 
-		// Kopf: ID + Name. innerHTML ist hier unkritisch, da der Inhalt aus festen Zahlen besteht.
+		// Kopf: ID + Name. Beide Werte per textContent setzen (NICHT via innerHTML), damit ein
+		// frei vergebener Sensorname nie als HTML interpretiert/ausgeführt wird (Stored-XSS-Schutz).
 		var head = document.createElement('div');
-		head.innerHTML = '<div class="sensor-id">' + nodeId(sensor.node) + '</div>' +
-		                 '<div class="sensor-name">' + cardName(sensor) + '</div>';
+		var idEl = document.createElement('div');
+		idEl.className   = 'sensor-id';
+		idEl.textContent = nodeId(sensor.node);
+		var nameEl = document.createElement('div');   // Namens-Zeile merken, wird bei jedem Poll aktualisiert.
+		nameEl.className   = 'sensor-name';
+		nameEl.textContent = cardName(sensor);
+		head.appendChild(idEl);
+		head.appendChild(nameEl);
 		info.appendChild(head);
-		var nameEl = head.querySelector('.sensor-name');   // Namens-Zeile merken, wird bei jedem Poll aktualisiert.
 
 		// Großer aktueller Messwert + Einheit "°C".
 		var valueWrap = document.createElement('div');

@@ -26,20 +26,45 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['192.168.2.65', 'localhost', '127.0.0.1']
+# Hosts/Domains, unter denen die App erreichbar sein darf. Als Komma-Liste über die
+# Umgebungsvariable ALLOWED_HOSTS überschreibbar (z. B. in .env), ganz ohne Code-Änderung
+# oder Image-Rebuild. Beispiele: ALLOWED_HOSTS=192.168.2.65,raspberrypi.local  oder  ALLOWED_HOSTS=*
+# ALLOWED_HOSTS = [h.strip() for h in os.environ.get(
+#     'ALLOWED_HOSTS', 'localhost,127.0.0.1,raspberrypi.local').split(',') if h.strip()]
+ALLOWED_HOSTS = ["*"] #Für Testzwecke
+
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'  # Nach erfolgreichem Login hierhin weiterleiten
-CSRF_TRUSTED_ORIGINS = [
-    "https://192.168.2.65",
-    "https://localhost",
-    "http://192.168.2.65",
-    "http://localhost",
-    "http://127.0.0.1",
-]
+
+# CSRF: Ein Wildcard ist hier NICHT möglich (Django lehnt "*" ab). Eine leere Liste ist
+# genau richtig, denn Django schützt POSTs bereits automatisch per Same-Origin-Abgleich
+# (Origin-Header == aufgerufener Host) – das funktioniert für JEDE IP/jeden Host, ohne dass
+# hier etwas eingetragen werden muss. Ein Eintrag ist nur nötig, wenn Formulare von einer
+# ANDEREN Domain/einem anderen Port aus gepostet werden.
+CSRF_TRUSTED_ORIGINS = []
+
+# Hinter dem nginx-Reverse-Proxy endet TLS bei nginx; intern spricht Django einfaches HTTP.
+# Diese Zeile lässt Django den Request als "sicher" (https) erkennen, sobald nginx den Header
+# "X-Forwarded-Proto: https" weiterreicht (siehe nginx.conf). Ohne das schlägt der CSRF-
+# Origin-Abgleich über HTTPS fehl (jeder POST → 403). Sicher, weil nginx den Header immer
+# selbst setzt und der web-Container nur über nginx erreichbar ist (kein direkter Zugriff).
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 365  # 1 Jahr in Sekunden
+
+# Secure-Cookies: Session- und CSRF-Cookie werden vom Browser NUR über HTTPS gesendet, nie
+# über unverschlüsseltes HTTP. Schützt davor, dass jemand im selben Netz die Cookies mitliest
+# und die Session übernimmt (Session-Hijacking).
+# ACHTUNG: Ist dies True, funktioniert der Login über http:// (Port 80) NICHT mehr, weil der
+# Browser das Session-Cookie dann nur noch über https herausgibt. Deshalb per Env steuerbar
+# (Default aus), damit http und https zunächst beide laufen. Sobald du auf https-only gehst,
+# in der .env setzen:  SECURE_COOKIES=true  (idealerweise zusammen mit einem http→https-Redirect).
+_secure_cookies = os.environ.get('SECURE_COOKIES', 'false').strip().lower() == 'true'
+SESSION_COOKIE_SECURE = _secure_cookies
+CSRF_COOKIE_SECURE = _secure_cookies
 
 # Application definition
 
@@ -91,6 +116,7 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        'OPTIONS': {'timeout': 20},   # bei Sperre bis zu 20 s warten statt sofort abbrechen
     }
 }
 
