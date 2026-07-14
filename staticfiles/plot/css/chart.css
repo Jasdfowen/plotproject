@@ -7,6 +7,7 @@
 	--border:         #d3dae0;
 	--border-soft:    #e2e7eb;
 	--accent:         #0091b8;
+	--accent-hover:   #007a99;
 	--text:           #1e2630;
 	--muted:          #7c8a96;
 	--muted2:         #4a5a68;
@@ -14,6 +15,7 @@
 	--offline:        #d12f2f;
 	--offline-bg:     #fbe4e4;
 	--offline-border: #f0bcbc;
+	--online:         #1a9850;
 }
 
 * { box-sizing: border-box; }
@@ -51,8 +53,9 @@ body {
 
 .sep { color: var(--border); }
 
-.count-online  { color: var(--muted); font-size: 10px; letter-spacing: 0.08em; }
-.count-offline { color: var(--offline); font-size: 10px; letter-spacing: 0.08em; }
+.count-online  { color: var(--online);  font-size: 10px; letter-spacing: 0.08em; }
+.count-offline { color: var(--muted);    font-size: 10px; letter-spacing: 0.08em; }
+.count-alarm   { color: var(--offline);  font-size: 10px; letter-spacing: 0.08em; }
 
 .range-label { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; }
 
@@ -105,6 +108,16 @@ body {
 	margin-bottom: 8px;
 }
 
+/* Kopfzeile einer Sektion: Überschrift links, Aktions-Button rechts. */
+.section-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8px;
+}
+
+.section-head .section-label { margin-bottom: 0; }
+
 .overview-panel {
 	background: var(--panel);
 	border: 1px solid var(--border);
@@ -149,6 +162,10 @@ body {
 
 .sensor-card--offline { border-color: var(--offline-bg); }
 
+/* Über Grenzwert: kräftig roter Rahmen, deutlich stärker als der blasse Offline-Rahmen. */
+.sensor-card--alarm { border-color: var(--offline); }
+.sensor-card--alarm .sensor-info { border-right-color: var(--offline); }
+
 .sensor-info {
 	display: flex;
 	flex-direction: column;
@@ -176,12 +193,19 @@ body {
 
 .sensor-badge {
 	display: inline-block;
-	background: var(--offline-bg);
-	border: 1px solid var(--offline-border);
-	color: var(--offline);
+	background: var(--border-soft);
+	border: 1px solid var(--border);
+	color: var(--muted2);
 	font-size: 9px;
 	letter-spacing: 0.12em;
 	padding: 2px 6px;
+}
+
+/* Alarm-Badge ("ÜBER GRENZWERT") bleibt rot – im Gegensatz zum grauen OFFLINE-Badge. */
+.sensor-badge--alarm {
+	background: var(--offline-bg);
+	border-color: var(--offline-border);
+	color: var(--offline);
 }
 
 .sensor-chart { height: 110px; padding: 8px 8px 8px 0; }
@@ -205,54 +229,3 @@ body {
 	.sensor-grid { grid-template-columns: 1fr; }
 	.topbar { flex-wrap: wrap; height: auto; padding: 8px 16px; }
 }
-
-/* ── Login-Seite ─────────────────────────────────────────────────────────── */
-
-.login-page {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	min-height: 100vh;
-}
-
-.login-form {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-	width: 340px;
-	padding: 32px;
-	background: var(--panel);
-	border: 1px solid var(--border);
-}
-
-.login-form .brand {
-	font-size: 14px;
-	margin-bottom: 12px;
-}
-
-.login-form label { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; margin-top: 10px; }
-
-.login-form input {
-	font-family: inherit;
-	font-size: 15px;
-	padding: 10px 12px;
-	border: 1px solid var(--border);
-	background: var(--bg);
-	color: var(--text);
-}
-
-.login-form button {
-	margin-top: 20px;
-	padding: 12px;
-	font-family: inherit;
-	font-size: 13px;
-	letter-spacing: 0.06em;
-	color: #ffffff;
-	background: var(--accent);
-	border: none;
-	cursor: pointer;
-}
-
-.login-form button:hover { background: #007a99; }
-
-.login-error { color: var(--offline); font-size: 11px; margin-top: 10px; }

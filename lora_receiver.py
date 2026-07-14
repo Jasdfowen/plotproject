@@ -6,6 +6,7 @@ Place this file next to manage.py. Run it alongside the Django server:
 """
 import sqlite3
 import time
+import os
 import re
 import serial
 from datetime import datetime, timezone
@@ -13,7 +14,7 @@ from pathlib import Path
 import random
 
 DB_PATH = Path(__file__).parent / 'db.sqlite3'
-
+PORT = '/dev/ttyACM0'
 
 def save_reading(node: int, temperature: float) -> None:
     """Insert one temperature reading into the database."""
@@ -63,30 +64,45 @@ def dummy_receive_loop() -> None:
         time.sleep(5)
 
 def read_serial_port() -> None:
-    ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)  # Adjust port and baud rate as needed
-    #Pattern on serial port: Start Receive: 1,23.9 :End Receive
     pattern = re.compile(r'Start Receive: (\d+),([\d.-]+) :End Receive') 
+    #Pattern on serial port: Start Receive: 1,23.9 :End Receive
     while True:
+        if not os.path.exists(PORT):
+            print(f"Waiting for {PORT} ...")
+            time.sleep(5)
+            continue
+        
         try:
-            line = ser.readline().decode('utf-8').strip()
-            if line != "":
-                match = pattern.match(line)
-                if match:
-                    node_id = int(match.group(1))
-                    temp = float(match.group(2))  
-                    on_packet_received(f"{node_id},{temp}".encode('utf-8'))
-                else:
-                    print(f"Unrecognized line: {line}")
+            ser = serial.Serial(PORT, 11520, timeout=1)
+            print(f"Connected to {PORT}")
+        except serial.SerialException as e:
+            print(f"Could not open {PORT}: {e}")
+            time.sleep(5)
+            continue
+        
+        try:
+            while True:
+                line = ser.readline().decode('utf-8').strip()
+                if line != "":
+                    match = pattern.match(line)
+                    if match:
+                        node_id = int(match.group(1))
+                        temp = float(match.group(2))  
+                        on_packet_received(f"{node_id},{temp}".encode('utf-8'))
+                    else:
+                        print(f"Unrecognized line: {line}")
+        except serial.SerialException as e:
+            print(f"Lost connection to port: {e}")
         except Exception as e:
-            print(f"Error reading from serial port: {e}")
-            time.sleep(1)  # Wait before retrying
+            print(f"Error while reading: {e}")
+        
+        finally:
             try: 
                 ser.close()
-                ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)  # Attempt to reopen the port
-            except Exception as e:
-                print(f"Critical error with serial port: {e}")
+            except Exception:
+                pass
 
-def main(dummy: bool = True) -> None:
+def main(dummy: bool = False) -> None:
     if dummy: #dummy mode for testing without LoRa hardware
         dummy_receive_loop()
     else:

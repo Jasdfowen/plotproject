@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', function () {
 	// Feste Einstellungen. Hier kannst du Verhalten ändern, ohne die Logik anzufassen.
 
 	var POLL_INTERVAL_MS  = 10000;            // Wie oft neue Daten geholt werden (10 s).
-	var OFFLINE_THRESHOLD = 60 * 1000;   // Ab welcher Funkstille ein Sensor als offline gilt (aktuell 60 s).
+	var OFFLINE_THRESHOLD = 60 * 60 * 1000;   // Ab welcher Funkstille ein Sensor als offline gilt (aktuell 60 Minuten).
 
 	// Auswählbare Zeitfenster für die Buttons oben rechts. "min" = Fensterbreite in Minuten.
 	var TIME_PRESETS = [

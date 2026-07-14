@@ -20,18 +20,19 @@ document.addEventListener('DOMContentLoaded', function () {
 	// Feste Einstellungen. Hier kannst du Verhalten ändern, ohne die Logik anzufassen.
 
 	var POLL_INTERVAL_MS  = 10000;            // Wie oft neue Daten geholt werden (10 s).
-	var OFFLINE_THRESHOLD = 60 * 1000;   // Ab welcher Funkstille ein Sensor als offline gilt (10 min in ms).
+	var OFFLINE_THRESHOLD = 60 * 60 * 1000;   // Ab welcher Funkstille ein Sensor als offline gilt (aktuell 60 Minuten).
 
 	// Auswählbare Zeitfenster für die Buttons oben rechts. "min" = Fensterbreite in Minuten.
 	var TIME_PRESETS = [
 		{ label: '5 min',  min: 5     },
-		{ label: '15 min', min: 15    },
 		{ label: '30 min', min: 30    },
 		{ label: '1 h',    min: 60    },
 		{ label: '2 h',    min: 120   },
-		{ label: '24 h',   min: 60*24 }       // 60*24 = 1440 Minuten = ein Tag.
+		{ label: '6 h',    min: 60*6  },       
+		{ label: '12 h',   min: 60*12 },      
+		{ label: '24 h',   min: 60*24 }       
 	];
-	var DEFAULT_WINDOW_MIN = 15;              // Welches Fenster beim Start aktiv ist (15 min).
+	var DEFAULT_WINDOW_MIN = 30;              // Welches Fenster beim Start aktiv ist (15 min).
 
 	// Farbpalette für die Sensorlinien. Wird der Reihe nach an Sensoren vergeben.
 	// Bewusst kräftige Farben, damit sie auf dem hellen Hintergrund gut sichtbar sind.
@@ -76,6 +77,12 @@ document.addEventListener('DOMContentLoaded', function () {
 	// Längere Bezeichnung, z. B. Node 3 → "Sensor 03".
 	function nodeName(node) { return 'Sensor ' + String(node).padStart(2, '0'); }
 
+	// Anzeigename: der in der Sensorverwaltung vergebene Name (kommt als sensor.name
+	// aus der API), sonst Fallback auf die Kurz-ID "S03" (für die kompakte Legende/Tooltip).
+	function displayName(sensor) { return sensor.name || nodeId(sensor.node); }
+	// Wie displayName, aber mit dem längeren Fallback "Sensor 03" für die Karten-Kopfzeile.
+	function cardName(sensor)    { return sensor.name || nodeName(sensor.node); }
+
 	// Liefert die feste Farbe eines Sensors. Beim ersten Aufruf für eine Node wird
 	// die nächste freie Palettenfarbe vergeben und gemerkt, damit sie konstant bleibt.
 	function colorForNode(nodeKey) {
@@ -107,6 +114,32 @@ document.addEventListener('DOMContentLoaded', function () {
 		return isNaN(t) ? true : (Date.now() - t > OFFLINE_THRESHOLD);
 	}
 
+	// Letzter Messwert eines Sensors (Zahl) oder null, falls keine Daten.
+	function lastTemp(sensor) {
+		var temps = sensor.temperatures || [];
+		return temps.length ? temps[temps.length - 1] : null;
+	}
+
+	// true, wenn der letzte Messwert über dem Grenzwert liegt. sensor.threshold kommt aus
+	// der API; ist keiner gesetzt (null/undefined), gibt es nie Alarm.
+	function isOverThreshold(sensor) {
+		if (sensor.threshold == null) { return false; }
+		var t = lastTemp(sensor);
+		return t != null && t > sensor.threshold;
+	}
+
+	// Waagerechte gestrichelte Linie auf Schwellwerthöhe für ein Karten-Chart
+	// (leere data-Liste, wenn kein Grenzwert gesetzt ist → keine Linie).
+	function thresholdMarkLine(sensor) {
+		if (sensor.threshold == null) { return { data: [] }; }
+		return {
+			symbol: 'none', silent: true,
+			data: [{ yAxis: sensor.threshold }],
+			lineStyle: { color: '#d12f2f', type: 'dashed' },   // Alarmrot (= --offline)
+			label: { show: false }
+		};
+	}
+
 	// Zentrale Regel für die Linienfarbe eines Sensors: grau wenn offline, sonst seine feste Farbe.
 	// Steht nur hier, damit eine Farbänderung an einer einzigen Stelle wirkt.
 	function lineColor(sensor) {
@@ -121,7 +154,7 @@ document.addEventListener('DOMContentLoaded', function () {
 			// smooth:false – Bezier-Glättung würde zwischen weit auseinanderliegenden
 			// Messpunkten künstlich über- und unterschwingen und die Linien unruhiger
 			// wirken lassen, als die Messwerte es eigentlich sind.
-			name: nodeId(sensor.node), type: 'line', smooth: false, showSymbol: false,
+			name: displayName(sensor), type: 'line', smooth: false, showSymbol: false,
 			lineStyle: { width: width, color: color },
 			itemStyle: { color: color },
 			data: toSeriesData(sensor)
@@ -191,7 +224,8 @@ document.addEventListener('DOMContentLoaded', function () {
 			btn.addEventListener('click', function () {
 				windowMin = preset.min;              // Neues Fenster übernehmen ...
 				markActiveRange();                   // ... aktiven Button hervorheben ...
-				render(lastSensors);                 // ... und sofort mit vorhandenen Daten neu zeichnen.
+				render(lastSensors);                 // ... sofort mit vorhandenen Daten neu zeichnen ...
+				loadAndRender();                     // ... und die passende Datenmenge fürs neue Fenster nachladen.
 			});
 			rangeContainer.appendChild(btn);
 		});
@@ -262,11 +296,11 @@ document.addEventListener('DOMContentLoaded', function () {
 		// Beschriftung, z. B. "S03".
 		var label = document.createElement('span');
 		label.className   = 'legend-label';
-		label.textContent = nodeId(sensor.node);
+		label.textContent = displayName(sensor);
 		item.appendChild(label);
 
 		legendContainer.appendChild(item);
-		legendByNode[key] = { item: item, swatch: swatch };  // Referenzen merken.
+		legendByNode[key] = { item: item, swatch: swatch, label: label };  // Referenzen merken.
 		return legendByNode[key];
 	}
 
@@ -276,6 +310,7 @@ document.addEventListener('DOMContentLoaded', function () {
 		var offline = isOffline(sensor);
 		ref.item.classList.toggle('legend-item--offline', offline);
 		ref.swatch.style.background = lineColor(sensor);
+		ref.label.textContent = displayName(sensor);   // Name bei jedem Poll neu setzen (folgt Umbenennungen ohne Reload).
 	}
 
 	// ── Sensorkarten ─────────────────────────────────────────────────────────────
@@ -296,10 +331,17 @@ document.addEventListener('DOMContentLoaded', function () {
 		info.className = 'sensor-info';
 		card.appendChild(info);
 
-		// Kopf: ID + Name. innerHTML ist hier unkritisch, da der Inhalt aus festen Zahlen besteht.
+		// Kopf: ID + Name. Beide Werte per textContent setzen (NICHT via innerHTML), damit ein
+		// frei vergebener Sensorname nie als HTML interpretiert/ausgeführt wird (Stored-XSS-Schutz).
 		var head = document.createElement('div');
-		head.innerHTML = '<div class="sensor-id">' + nodeId(sensor.node) + '</div>' +
-		                 '<div class="sensor-name">' + nodeName(sensor.node) + '</div>';
+		var idEl = document.createElement('div');
+		idEl.className   = 'sensor-id';
+		idEl.textContent = nodeId(sensor.node);
+		var nameEl = document.createElement('div');   // Namens-Zeile merken, wird bei jedem Poll aktualisiert.
+		nameEl.className   = 'sensor-name';
+		nameEl.textContent = cardName(sensor);
+		head.appendChild(idEl);
+		head.appendChild(nameEl);
 		info.appendChild(head);
 
 		// Großer aktueller Messwert + Einheit "°C".
@@ -332,12 +374,11 @@ document.addEventListener('DOMContentLoaded', function () {
 			tooltip: chartTooltip(),
 			xAxis:   timeAxis(false),   // Ohne Achsenbeschriftung (kleine Fläche).
 			yAxis:   valueAxis(9),
-			series:  [{ type: 'line', smooth: true, showSymbol: false,
-			            lineStyle: { width: 1.5, color: color }, itemStyle: { color: color }, data: [] }]
+			series:  [{ type: 'line', data: [] }]   // Platzhalter; updateCard() ersetzt ihn sofort via lineSeries().
 		});
 
 		// Alle Bestandteile der Karte merken, damit updateCard() sie schnell findet.
-		cardsByNode[key] = { chart: chart, root: card, valueEl: valueEl, statusEl: statusEl, color: color };
+		cardsByNode[key] = { chart: chart, root: card, valueEl: valueEl, statusEl: statusEl, nameEl: nameEl, color: color };
 		return cardsByNode[key];
 	}
 
@@ -345,28 +386,36 @@ document.addEventListener('DOMContentLoaded', function () {
 	function updateCard(sensor, bounds) {
 		var ref = ensureCard(sensor);          // Karte holen (oder beim ersten Mal anlegen).
 		var offline = isOffline(sensor);
+		var alarm   = !offline && isOverThreshold(sensor);   // Offline hat Vorrang vor Alarm.
+
+		// Name bei jedem Poll neu setzen, damit Umbenennungen ohne Reload erscheinen.
+		ref.nameEl.textContent = cardName(sensor);
 
 		// Letzten Messwert und dessen Zeitpunkt bestimmen.
-		var temps    = sensor.temperatures || [], dates = sensor.dates || [];
-		var lastTemp = temps.length ? temps[temps.length - 1] : null;
-		var lastMs   = lastTimestampMs(sensor);
+		var last   = lastTemp(sensor);
+		var lastMs = lastTimestampMs(sensor);
 
-		// Offline-Optik der Karte umschalten.
+		// Zustand der Karte umschalten: offline > alarm > normal.
 		ref.root.classList.toggle('sensor-card--offline', offline);
-		ref.valueEl.style.color   = offline ? '#3a4a58' : ref.color;   // Wert gedimmt, wenn offline.
-		ref.valueEl.textContent   = (lastTemp == null) ? '—' : Number(lastTemp).toFixed(1);  // 1 Nachkommastelle.
+		ref.root.classList.toggle('sensor-card--alarm', alarm);
+		ref.valueEl.style.color = offline ? '#3a4a58' : (alarm ? 'var(--offline)' : ref.color);
+		ref.valueEl.textContent = (last == null) ? '—' : Number(last).toFixed(1);  // 1 Nachkommastelle.
 
 		if (offline) {
 			ref.statusEl.innerHTML = '<span class="sensor-badge">OFFLINE</span>';
+		} else if (alarm) {
+			ref.statusEl.innerHTML = '<span class="sensor-badge sensor-badge--alarm">ÜBER GRENZWERT</span>';
 		} else {
 			ref.statusEl.className   = 'sensor-time';
 			ref.statusEl.textContent = isNaN(lastMs) ? '—' : formatClock(lastMs);  // Uhrzeit der letzten Messung.
 		}
 
-		// Linie und Zeitfenster des Mini-Charts aktualisieren (gleicher Serien-Helfer wie oben).
+		// Linie + Zeitfenster des Mini-Charts; zusätzlich die Schwellwertlinie (falls gesetzt).
+		var series = lineSeries(sensor, 1.5);
+		series.markLine = thresholdMarkLine(sensor);
 		ref.chart.setOption({
 			xAxis:  { min: bounds.start, max: bounds.end },
-			series: [ lineSeries(sensor, 1.5) ]
+			series: [ series ]
 		});
 	}
 
@@ -376,6 +425,7 @@ document.addEventListener('DOMContentLoaded', function () {
 	function updateCounts(sensors) {
 		var online  = sensors.filter(function (s) { return !isOffline(s); }).length;
 		var offline = sensors.length - online;
+		var alarm   = sensors.filter(function (s) { return !isOffline(s) && isOverThreshold(s); }).length;
 
 		document.getElementById('countOnline').textContent = online + ' ONLINE';
 
@@ -387,6 +437,16 @@ document.addEventListener('DOMContentLoaded', function () {
 			off.hidden = false; sep.hidden = false;
 		} else {
 			off.hidden = true;  sep.hidden = true;
+		}
+
+		// Dasselbe für die Anzahl der Sensoren über Grenzwert.
+		var sep2 = document.getElementById('countSep2');
+		var al   = document.getElementById('countAlarm');
+		if (alarm > 0) {
+			al.textContent = alarm + ' ÜBER GRENZWERT';
+			al.hidden = false; sep2.hidden = false;
+		} else {
+			al.hidden = true;  sep2.hidden = true;
 		}
 	}
 
@@ -408,7 +468,8 @@ document.addEventListener('DOMContentLoaded', function () {
 	function loadAndRender() {
 		if (inFlight) { return; }          // Läuft schon ein Abruf? Dann diesen überspringen.
 		inFlight = true;
-		fetch('/temperature-data/')
+		// Nur das aktuell gewählte Zeitfenster anfragen (Minuten), statt immer alles zu laden.
+		fetch('/temperature-data/?minutes=' + windowMin)
 			.then(function (r) { return r.json(); })          // Antwort als JSON parsen.
 			.then(function (json) {
 				lastSensors = json.sensors || [];             // Daten merken (für Toggle/Range ohne neuen Abruf).
