@@ -27,7 +27,7 @@
 			<div class="time-range" id="timeRange"></div>
 			<a href="{% url 'history' %}" class="csv-btn">VERLAUF</a>
 			<a href="{% url 'sensor_history' %}" class="csv-btn">VERTEILUNG</a>
-			<a href="{% url 'export_csv' %}" class="csv-btn" download>CSV</a>
+			{% if not kiosk_mode %}<a href="{% url 'export_csv' %}" class="csv-btn" download>CSV</a>{% endif %}
 		</div>
 	</header>
 
@@ -43,7 +43,7 @@
 		<section>
 			<div class="section-head">
 				<div class="section-label">EINZELSENSOREN</div>
-				<a href="{% url 'sensor_management' %}" class="csv-btn">SENSOREINSTELLUNGEN</a>
+				{% if not kiosk_mode %}<a href="{% url 'sensor_management' %}" class="csv-btn">SENSOREINSTELLUNGEN</a>{% endif %}
 			</div>
 			<div class="sensor-grid" id="main"></div>
 		</section>

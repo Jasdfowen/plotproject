@@ -86,6 +86,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'plot.middleware.KioskModeMiddleware',      # merkt sich ?kiosk=1 in der Session (vor dem Login-Check)
     'plot.middleware.RequireLoginMiddleware',  # Eigene Middleware, die den Login erzwingt
 ]
 
@@ -101,6 +102,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'plot.context_processors.kiosk_mode',   # macht {{ kiosk_mode }} in allen Templates verfügbar
             ],
         },
     },
