@@ -15,9 +15,10 @@ services:
     build: .
     command: python lora_receiver.py
     volumes:
+      - /dev:/dev
       - ./db.sqlite3:/app/db.sqlite3
-    #devices:
-     # - "/dev/ttyACM0:/dev/ttyACM0" #comment out when not using a LoRa device
+    device_cgroup_rules:
+      - 'c 166:* rmw'
     restart: unless-stopped
 
   nginx:
